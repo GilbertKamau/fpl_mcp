@@ -35,7 +35,8 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - run: pip install ".[supabase]"
+      # Editable install so data/cache sits in the workspace, where actions/cache can save it.
+      - run: pip install -e ".[supabase]"
 
       # Past seasons never change; cache them so each run only downloads the current season.
       - uses: actions/cache@v6
