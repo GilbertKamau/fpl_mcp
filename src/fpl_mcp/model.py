@@ -1,17 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-"""Expected-points model: features, walk-forward evaluation, training and predictions.
-
-    fpl-model evaluate   walk-forward test on the last complete seasons (nothing saved)
-    fpl-model compare    the same test for every feature set, side by side (nothing saved)
-    fpl-model train      evaluate, then train on all data; kept only if it beats the baseline
-                         and the previous model
-    fpl-model predict    write expected points for the next gameweeks to the predictions table
-    fpl-model all        train + predict
-
-The model predicts points per fixture; a gameweek's expected points is the sum over that
-gameweek's fixtures (so double gameweeks count twice).
-"""
+"""Expected-points model (fpl-model evaluate | compare | train | predict | all)."""
 
 import argparse
 import json
@@ -55,35 +44,30 @@ STATS = [
 TEAM_STATS = ["gf", "ga", "xg", "xga"]
 TEAM_WINDOW = 6
 POSITION_CODES = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
-HORIZON = 5  # gameweeks ahead to predict
+HORIZON = 5
 EVAL_SEASONS = 3
-KEEP_MODELS = 3  # stored model versions to keep
+KEEP_MODELS = 3
 
-# Rolling windows (in matches) and the stats averaged over each.
 ROLLING = {
-    1: ["total_points", "minutes", "starts", "played60"],  # did they start last time?
+    1: ["total_points", "minutes", "starts", "played60"],
     3: STATS + ["played60"],
     6: STATS + ["played60"],
     12: STATS + ["played60"],
-    38: ["total_points", "minutes", "expected_goal_involvements", "bps", "bonus", "played60"],  # ~a season
+    38: ["total_points", "minutes", "expected_goal_involvements", "bps", "bonus", "played60"],
 }
 PLAYER_FEATURES = [f"{s}_r{w}" for w, cols in ROLLING.items() for s in cols]
 CONTEXT_FEATURES = ["n_prev", "season_pts_mean", "days_since_last", "value", "was_home", "position_code"]
 TEAM_FEATURES = [f"team_{s}_r{TEAM_WINDOW}" for s in TEAM_STATS] + [f"opp_{s}_r{TEAM_WINDOW}" for s in TEAM_STATS]
-# Ownership and net transfers, as percentiles within the gameweek: the crowd's view of
-# fitness and form, known before the deadline.
 MARKET_FEATURES = ["ownership_rank", "transfer_rank"]
 
 FEATURE_SETS = {
-    # v1: the first model (rolling 3/6/12, context, team strength).
     "v1": [f"{s}_r{w}" for w in (3, 6, 12) for s in ROLLING[w]] + CONTEXT_FEATURES + TEAM_FEATURES,
-    # v2: adds last-match and season-long form, and market signals.
     "v2": PLAYER_FEATURES + CONTEXT_FEATURES + TEAM_FEATURES + MARKET_FEATURES,
 }
 FEATURES = FEATURE_SETS["v2"]
 
 LGB_PARAMS = dict(
-    objective="regression",  # squared error -> predicts the mean, i.e. expected points
+    objective="regression",
     learning_rate=0.03,
     num_leaves=31,
     min_data_in_leaf=100,
@@ -95,9 +79,6 @@ LGB_PARAMS = dict(
     verbose=-1,
 )
 NUM_ROUNDS = 500
-
-
-# --- Loading ----------------------------------------------------------------------
 
 
 def current_season() -> str:
@@ -114,7 +95,7 @@ def _read_season(engine, season: str) -> pd.DataFrame:
         try:
             with engine.connect() as conn:
                 return pd.read_sql(select(player_gameweeks).where(player_gameweeks.c.season == season), conn)
-        except Exception as exc:  # long reads over the Supabase pooler occasionally drop
+        except Exception as exc:
             if attempt == 2:
                 raise
             log.warning("Reading %s failed (%s), retrying", season, exc.__class__.__name__)
@@ -122,11 +103,7 @@ def _read_season(engine, season: str) -> pd.DataFrame:
 
 
 def load_history(season_now: str, refresh_cache: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """All player-fixture rows plus season team names.
-
-    Past seasons never change, so they are cached locally in data/cache (git-ignored);
-    only the current season is read from the database each time.
-    """
+    """All player-fixture rows and team names; past seasons are cached in data/cache."""
     engine = get_engine()
     with engine.connect() as conn:
         seasons = sorted(r[0] for r in conn.execute(select(player_gameweeks.c.season).distinct()))
@@ -165,9 +142,6 @@ def prepare(df: pd.DataFrame, names: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# --- Features ----------------------------------------------------------------------
-
-
 def add_player_features(df: pd.DataFrame) -> pd.DataFrame:
     """Rolling form from each player's previous fixtures (never the current one)."""
     df = df.sort_values(["pid", "kickoff_time", "fixture"]).reset_index(drop=True)
@@ -187,7 +161,6 @@ def add_player_features(df: pd.DataFrame) -> pd.DataFrame:
     days = (df["kickoff_time"] - df["prev_kickoff"]).dt.total_seconds() / 86400
     df["days_since_last"] = days.clip(0, 120)
 
-    # Points per match earlier in the same season.
     pts = df[TARGET].fillna(0)
     by_season = [df["pid"], df["season"]]
     before = pts.groupby(by_season).cumsum() - pts
@@ -209,12 +182,11 @@ def team_fixture_table(df: pd.DataFrame) -> pd.DataFrame:
         n_players=("kickoff_time", "size"),
     ).reset_index()
     t = t[t["team_name"].notna()]
-    # Each side of a fixture is one club; if mislabelled players add extra "clubs", keep the majority.
     t = t.sort_values("n_players", ascending=False).drop_duplicates(["season", "fixture", "was_home"])
     home = t["was_home"] == 1
     t["gf"] = np.where(home, t["team_h_score"], t["team_a_score"])
     t["ga"] = np.where(home, t["team_a_score"], t["team_h_score"])
-    t["xg"] = t["xg_sum"].where(t["xg_n"] > 0)  # xG only exists from 2022-23
+    t["xg"] = t["xg_sum"].where(t["xg_n"] > 0)
     opp = t[["season", "fixture", "team_name", "xg"]].rename(columns={"team_name": "other", "xg": "xga"})
     t = t.merge(opp, on=["season", "fixture"])
     t = t[t["team_name"] != t["other"]]
@@ -245,9 +217,6 @@ def build_training_frame(df: pd.DataFrame) -> pd.DataFrame:
     feat = _attach_team(feat, tf, "team_name", "team")
     feat = _attach_team(feat, tf, "opp_name", "opp")
     return feat[feat[TARGET].notna()]
-
-
-# --- Evaluation and training -------------------------------------------------------------
 
 
 def _fit(train: pd.DataFrame, features: list[str]) -> lgb.Booster:
@@ -286,7 +255,7 @@ def evaluate(feat: pd.DataFrame, test_seasons: list[str], features: list[str] | 
         model = _fit(train, features)
         pred = model.predict(test[features])
         baseline = test["total_points_r6"].fillna(0).to_numpy()
-        regulars = (test["minutes_r3"] >= 60).to_numpy()  # players who have been starting
+        regulars = (test["minutes_r3"] >= 60).to_numpy()
         out[season] = {
             "rows": int(len(test)),
             "model": _scores(test[TARGET], pred),
@@ -361,8 +330,6 @@ def train(refresh_cache: bool = False) -> dict:
     now = datetime.now(timezone.utc)
     with get_engine().begin() as conn:
         if accepted:
-            # Final model uses every season, including this one so far. Stored in the database so
-            # any machine (or the scheduled GitHub Action) can make predictions with it.
             model = _fit(feat, FEATURES)
             conn.execute(
                 model_artifacts.insert().values(
@@ -370,7 +337,6 @@ def train(refresh_cache: bool = False) -> dict:
                 )
             )
             note.append(f"trained on {len(feat)} fixtures with {len(FEATURES)} features")
-            # Keep the newest few models (~1.5 MB each) so the database doesn't grow every week.
             keep = select(model_artifacts.c.version).order_by(model_artifacts.c.version.desc()).limit(KEEP_MODELS)
             conn.execute(delete(model_artifacts).where(model_artifacts.c.version.not_in(keep.scalar_subquery())))
         conn.execute(
@@ -392,18 +358,15 @@ def load_model(version: str) -> lgb.Booster:
         text_ = conn.execute(select(model_artifacts.c.model_text).where(model_artifacts.c.version == version)).scalar()
     if text_:
         return lgb.Booster(model_str=text_)
-    path = MODEL_DIR / f"lgbm-{version}.txt"  # models trained before they were stored in the database
+    path = MODEL_DIR / f"lgbm-{version}.txt"
     if path.exists():
         return lgb.Booster(model_file=str(path))
     raise RuntimeError(f"Model {version} not found in the database; run `fpl-model train`.")
 
 
-# --- Predictions -------------------------------------------------------------------------
-
-
 def availability(status: str | None, chance: float | None, ahead: int) -> float:
     """Multiplier for injury/suspension news. FPL's chance-of-playing only covers the next gameweek."""
-    if status in ("u", "n"):  # left the club / not in the squad
+    if status in ("u", "n"):
         return 0.0
     if chance is not None and not pd.isna(chance):
         base = float(chance) / 100
@@ -432,7 +395,7 @@ def predict(horizon: int = HORIZON) -> dict:
         fx = pd.read_sql(select(fixtures), conn)
         gws = pd.read_sql(select(gameweeks), conn)
 
-    next_gw = gws.loc[gws["is_next"] == True, "id"]  # noqa: E712
+    next_gw = gws.loc[gws["is_next"].astype(bool), "id"]
     if next_gw.empty:
         return {"predictions": 0, "note": "No upcoming gameweek."}
     first_gw = int(next_gw.iloc[0])
@@ -443,10 +406,8 @@ def predict(horizon: int = HORIZON) -> dict:
     team_name = dict(zip(cur_teams["id"], cur_teams["name"]))
     now = pd.Timestamp.now(tz="UTC")
 
-    # One placeholder row per current player at "now": its lagged features are the player's
-    # form going into the next match, computed by exactly the same code as in training.
+    # A placeholder row per player at "now" yields their form going into the next match.
     cur = cur_players[cur_players["position"].isin(POSITION_CODES) & cur_players["code"].notna()].copy()
-    # Market signals as percentiles across current players, like the per-gameweek ranks in training.
     cur["ownership_rank"] = cur["selected_by_percent"].rank(pct=True)
     cur["transfer_rank"] = (cur["transfers_in_event"] - cur["transfers_out_event"]).rank(pct=True)
     dummy = pd.DataFrame(
@@ -466,7 +427,7 @@ def predict(horizon: int = HORIZON) -> dict:
     team_state = add_team_features(pd.concat([tf, team_dummy], ignore_index=True))
     team_state = team_state[team_state["fixture"] == -1].set_index("team_name")
 
-    upcoming = fx[fx["event"].isin(target_gws) & (fx["started"] != True)].copy()  # noqa: E712
+    upcoming = fx[fx["event"].isin(target_gws) & ~fx["started"].fillna(False).astype(bool)].copy()
     upcoming["kickoff_time"] = pd.to_datetime(upcoming["kickoff_time"], utc=True)
     rows = []
     for side, other, home in (("team_h", "team_a", 1.0), ("team_a", "team_h", 0.0)):
@@ -493,7 +454,6 @@ def predict(horizon: int = HORIZON) -> dict:
         for s in TEAM_STATS:
             X[f"{prefix}_{s}_r{TEAM_WINDOW}"] = names_.map(team_state[f"r_{s}"])
 
-    # Use the feature list the model was trained with, so older models keep working.
     X["raw"] = booster.predict(X[booster.feature_name()])
     X["ahead"] = X["gameweek"] - first_gw
     X["availability"] = [
@@ -521,14 +481,12 @@ def predict(horizon: int = HORIZON) -> dict:
                 "season": season_now,
                 "first_gameweek": first_gw,
                 "baseline_points": None if pd.isna(r.total_points_r6) else round(float(r.total_points_r6), 3),
-                # FPL's ep_next covers the whole next gameweek (both fixtures in a double).
                 "fpl_expected_points": None if r.ahead != 0 or pd.isna(r.ep_next) else float(r.ep_next),
             }
         )
     with engine.begin() as conn:
         conn.execute(delete(predictions))
     upsert(engine, predictions, out)
-    # Latest prediction before each deadline wins, so the archive scores what was actually advised.
     upsert(engine, prediction_history, archive)
     return {"model_version": previous["version"], "gameweeks": target_gws, "predictions": len(out)}
 

@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-"""Score archived predictions against what actually happened, gameweek by gameweek.
-
-Only the prediction made for the very next gameweek is scored (the last one saved before that
-gameweek's deadline), alongside two benchmarks recorded at the same moment: the player's average
-over their last 6 matches, and FPL's own expected points (ep_next).
-"""
+"""Score each gameweek's pre-deadline predictions against actual points and the benchmarks."""
 
 import numpy as np
 import pandas as pd
@@ -60,18 +55,17 @@ def live_accuracy(season: str) -> dict:
 
 def summarise(preds: pd.DataFrame, actual: pd.DataFrame) -> dict:
     """preds: one row per player per fixture; actual: points per player per gameweek."""
-    # One row per player per gameweek (double gameweeks have two fixtures).
     per_gw = (
         preds.groupby(["player_id", "gameweek"])
         .agg(
             model=("expected_points", "sum"),
-            baseline=("baseline_points", lambda s: s.sum(min_count=1)),  # stays missing if never known
-            fpl=("fpl_expected_points", "max"),  # FPL's figure already covers the whole gameweek
+            baseline=("baseline_points", lambda s: s.sum(min_count=1)),
+            fpl=("fpl_expected_points", "max"),
         )
         .reset_index()
         .merge(actual, on=["player_id", "gameweek"], how="left")
     )
-    per_gw["actual"] = per_gw["actual"].fillna(0)  # no record = didn't play
+    per_gw["actual"] = per_gw["actual"].fillna(0)
 
     weeks = []
     for gw, frame in per_gw.groupby("gameweek"):

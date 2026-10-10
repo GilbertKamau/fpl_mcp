@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-"""Squad, transfer, captain and chip decisions as integer programs (PuLP + HiGHS).
-
-Everything is driven by the model's expected points (the predictions table). Points for
-gameweek k ahead are weighted by DECAY**k because predictions further out are less reliable.
-"""
+"""Squad, transfer, captain and chip decisions as integer programs (PuLP + HiGHS)."""
 
 from dataclasses import dataclass, field
 
@@ -19,11 +15,8 @@ XI_MAX = {"GKP": 1, "DEF": 5, "MID": 5, "FWD": 3}
 MAX_PER_CLUB = 3
 HIT_COST = 4
 MAX_BANKED_TRANSFERS = 5
-BENCH_WEIGHT = 0.1  # bench points matter a little (auto-subs)
+BENCH_WEIGHT = 0.1
 DECAY = 0.85
-
-
-# --- Expected points ----------------------------------------------------------------------
 
 
 def planning_gameweeks(count: int) -> list[int]:
@@ -37,14 +30,11 @@ def expected_points(player_id: int, gw: int) -> float:
     return snapshot()["expected_points"]["by_player"].get(player_id, {}).get(gw, 0.0)
 
 
-# --- Core solver -------------------------------------------------------------------------------
-
-
 @dataclass
 class Plan:
     gameweeks: list[int]
     squad: list[int]
-    lineups: dict[int, dict]  # gw -> {"xi": [...], "bench": [...], "captain": id, "vice": id, "points": float}
+    lineups: dict[int, dict]
     transfers_in: list[int] = field(default_factory=list)
     transfers_out: list[int] = field(default_factory=list)
     hits: int = 0
@@ -55,7 +45,7 @@ class Plan:
 def solve(
     gameweeks: list[int],
     budget: float,
-    current: dict[int, float] | None = None,  # player id -> selling price
+    current: dict[int, float] | None = None,
     free_transfers: int = 1,
     max_transfers: int | None = None,
 ) -> Plan:
@@ -63,7 +53,6 @@ def solve(
     pool = snap["players"]
     current = current or {}
 
-    # Skip players the model expects nothing from, unless they are already in the squad.
     candidates = {
         p["id"]: p
         for p in pool
@@ -99,7 +88,7 @@ def solve(
         t_in = prob.add_variable_dict("in", [i for i in ids if i not in current], cat="Binary")
         t_out = prob.add_variable_dict("out", [i for i in ids if i in current], cat="Binary")
         for i in ids:
-            # Written as a difference: in PuLP 4, `var == var` compares objects instead of building a constraint.
+            # PuLP 4 needs differences: `var == var` is a Python comparison.
             if i in current:
                 prob += x[i] + t_out[i] == 1
             else:
@@ -133,7 +122,6 @@ def solve(
         captain = next(i for i in squad if c[i, g].value() > 0.5)
         vice = next(i for i in xi if i != captain)
         bench = [i for i in squad if i not in xi]
-        # Bench order: goalkeeper last, outfielders by expected points.
         bench.sort(key=lambda i: (candidates[i]["position"] == "GKP", -ep[i, g]))
         points = sum(ep[i, g] for i in xi) + ep[captain, g]
         lineups[g] = {"xi": xi, "bench": bench, "captain": captain, "vice": vice, "points": round(points, 2)}
@@ -151,18 +139,15 @@ def solve(
     return plan
 
 
-# --- Manager state (public endpoints, no login) ---------------------------------------------
-
-
 @dataclass
 class Manager:
     team_id: int
     name: str
-    squad: dict[int, float]  # player id -> estimated selling price
+    squad: dict[int, float]
     bank: float
     free_transfers: int
     chips_used: list[dict]
-    gameweek: int  # the gameweek the picks are from
+    gameweek: int
     notes: list[str]
 
 
@@ -178,7 +163,7 @@ def estimate_free_transfers(history: dict) -> int:
     weeks = sorted(history.get("current", []), key=lambda r: r["event"])
     if not weeks:
         return 1
-    ft = 1  # available for the week after the manager's first gameweek
+    ft = 1
     for week in weeks[1:]:
         if chips.get(week["event"]) not in ("wildcard", "freehit"):
             ft = max(ft - week["event_transfers"], 0)
@@ -225,9 +210,6 @@ def load_manager(team_id: int) -> Manager:
     )
 
 
-# --- Presentation ------------------------------------------------------------------------------
-
-
 def _name(pid: int) -> str:
     p = snapshot()["players_by_id"].get(pid)
     if not p:
@@ -256,9 +238,6 @@ def describe_lineup(plan: Plan, gw: int) -> dict:
         "starting_xi": [_player_line(i, gw) for i in lu["xi"]],
         "bench": [_player_line(i, gw) for i in lu["bench"]],
     }
-
-
-# --- Tool entry points --------------------------------------------------------------------------
 
 
 def optimal_squad(budget: float = 100.0, gameweeks: int = 3) -> dict:
@@ -309,7 +288,6 @@ def suggest_transfers(
         "expected_gain_over_holding": gain,
         "expected_points_by_gameweek": {g: plan.lineups[g]["points"] for g in gws},
         "next_gameweek_lineup": describe_lineup(plan, gws[0]),
-        # Checked on the squad after the suggested transfers, with roles from the suggested lineup.
         "availability_alerts": (alerts := availability_alerts(plan.squad, set(plan.lineups[gws[0]]["xi"]))),
         "notes": m.notes
         + ["Gain is weighted points over the planning window, after hits (later weeks count a bit less)."]
@@ -341,7 +319,6 @@ def pick_captain(team_id: int) -> dict:
 
 
 CHIP_LABELS = {"wildcard": "Wildcard", "freehit": "Free Hit", "bboost": "Bench Boost", "3xc": "Triple Captain"}
-# Rules of thumb for when a chip is worth playing now rather than saving it.
 CHIP_THRESHOLDS = {"3xc": 9.0, "bboost": 14.0, "freehit": 15.0, "wildcard": 20.0}
 
 
@@ -351,7 +328,6 @@ def chip_advice(team_id: int, gameweeks: int = 5) -> dict:
     next_gw = gws[0]
     budget = m.bank + sum(m.squad.values())
 
-    # Which chips can still be played this half of the season?
     windows = [c for c in api.bootstrap()["chips"] if c["start_event"] <= next_gw <= c["stop_event"]]
     used = {(c["name"], c["event"]) for c in m.chips_used}
     available = {}
@@ -383,7 +359,7 @@ def chip_advice(team_id: int, gameweeks: int = 5) -> dict:
             gain = round(fh.lineups[next_gw]["points"] - hold.lineups[next_gw]["points"], 2)
             entry["expected_gain_next_gw"] = gain
             play_now = gain >= CHIP_THRESHOLDS[chip]
-        else:  # wildcard: best unrestricted squad vs best plan with normal transfers
+        else:
             wc = solve(gws, budget)
             normal = solve(gws, budget, current=m.squad, free_transfers=m.free_transfers, max_transfers=3)
             gain = round(wc.objective - normal.objective, 2)

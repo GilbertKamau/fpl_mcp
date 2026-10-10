@@ -27,7 +27,6 @@ from .config import database_url
 
 metadata = MetaData()
 
-# --- Current season snapshot (refreshed from the live FPL API) -------------
 
 teams = Table(
     "teams",
@@ -54,9 +53,9 @@ players = Table(
     Column("first_name", String(64)),
     Column("second_name", String(64)),
     Column("team_id", Integer, index=True),
-    Column("position", String(3), index=True),  # GKP / DEF / MID / FWD
-    Column("price", Float),  # £m
-    Column("status", String(1)),  # a=available, d=doubtful, i=injured, s=suspended, u=unavailable
+    Column("position", String(3), index=True),
+    Column("price", Float),
+    Column("status", String(1)),
     Column("news", Text),
     Column("chance_of_playing_next_round", Integer),
     Column("selected_by_percent", Float),
@@ -79,7 +78,7 @@ players = Table(
     Column("expected_goal_involvements", Float),
     Column("expected_goals_conceded", Float),
     Column("ict_index", Float),
-    Column("ep_next", Float),  # FPL's own expected points for next GW
+    Column("ep_next", Float),
     Column("transfers_in_event", Integer),
     Column("transfers_out_event", Integer),
     Column("penalties_order", Integer),
@@ -107,7 +106,7 @@ fixtures = Table(
     "fixtures",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("event", Integer, index=True),  # gameweek; NULL when not yet scheduled
+    Column("event", Integer, index=True),
     Column("kickoff_time", DateTime(timezone=True)),
     Column("team_h", Integer, index=True),
     Column("team_a", Integer, index=True),
@@ -120,7 +119,6 @@ fixtures = Table(
     Column("updated_at", DateTime(timezone=True)),
 )
 
-# --- History: one row per player per fixture, all seasons ------------------
 
 season_teams = Table(
     "season_teams",
@@ -134,10 +132,10 @@ player_gameweeks = Table(
     "player_gameweeks",
     metadata,
     Column("season", String(7), primary_key=True),
-    Column("element", Integer, primary_key=True),  # player id within that season
+    Column("element", Integer, primary_key=True),
     Column("fixture", Integer, primary_key=True),
     Column("round", Integer, index=True),
-    Column("player_code", Integer, index=True),  # stable across seasons
+    Column("player_code", Integer, index=True),
     Column("name", String(128)),
     Column("position", String(3)),
     Column("team_id", Integer),
@@ -168,18 +166,17 @@ player_gameweeks = Table(
     Column("expected_goal_involvements", Float),
     Column("expected_goals_conceded", Float),
     Column("defensive_contribution", Integer),
-    Column("value", Float),  # price in £m at the time
+    Column("value", Float),
     Column("selected", Integer),
     Column("transfers_in", Integer),
     Column("transfers_out", Integer),
     Column("transfers_balance", Integer),
     Column("team_h_score", Integer),
     Column("team_a_score", Integer),
-    Column("xp", Float),  # FPL's own expected points for the fixture's gameweek (vaastav, 2020-21 on)
-    Column("source", String(16)),  # "vaastav" or "fpl_api"
+    Column("xp", Float),
+    Column("source", String(16)),
 )
 
-# --- Model outputs -----------------------------------------------------------------
 
 predictions = Table(
     "predictions",
@@ -187,9 +184,9 @@ predictions = Table(
     Column("player_id", Integer, primary_key=True),
     Column("fixture_id", Integer, primary_key=True),
     Column("gameweek", Integer, index=True),
-    Column("expected_points", Float),  # after the availability adjustment
-    Column("raw_expected_points", Float),  # model output assuming the player is available
-    Column("availability", Float),  # 0-1 multiplier from injury/suspension news
+    Column("expected_points", Float),
+    Column("raw_expected_points", Float),
+    Column("availability", Float),
     Column("model_version", String(32)),
     Column("created_at", DateTime(timezone=True)),
 )
@@ -199,10 +196,10 @@ model_runs = Table(
     metadata,
     Column("version", String(32), primary_key=True),
     Column("trained_at", DateTime(timezone=True)),
-    Column("accepted", Boolean),  # only accepted models are used for predictions
-    Column("mae", Float),  # walk-forward MAE across the evaluation seasons
+    Column("accepted", Boolean),
+    Column("mae", Float),
     Column("baseline_mae", Float),
-    Column("metrics", Text),  # JSON: per-season details
+    Column("metrics", Text),
     Column("note", Text),
 )
 
@@ -210,25 +207,24 @@ model_artifacts = Table(
     "model_artifacts",
     metadata,
     Column("version", String(32), primary_key=True),
-    Column("model_text", Text, nullable=False),  # LightGBM model file contents
-    Column("features", Text),  # JSON list, in training order
+    Column("model_text", Text, nullable=False),
+    Column("features", Text),
     Column("created_at", DateTime(timezone=True)),
 )
 
-# Every prediction ever made, kept so it can be scored against what actually happened.
 prediction_history = Table(
     "prediction_history",
     metadata,
     Column("season", String(7), primary_key=True),
     Column("player_id", Integer, primary_key=True),
     Column("fixture_id", Integer, primary_key=True),
-    Column("first_gameweek", Integer, primary_key=True),  # the next gameweek when the prediction was made
+    Column("first_gameweek", Integer, primary_key=True),
     Column("gameweek", Integer, index=True),
     Column("expected_points", Float),
     Column("raw_expected_points", Float),
     Column("availability", Float),
-    Column("baseline_points", Float),  # average points over the player's last 6 matches
-    Column("fpl_expected_points", Float),  # FPL's ep_next at the time (first gameweek only)
+    Column("baseline_points", Float),
+    Column("fpl_expected_points", Float),
     Column("model_version", String(32)),
     Column("created_at", DateTime(timezone=True)),
 )
@@ -255,7 +251,6 @@ def get_engine() -> Engine:
         metadata.create_all(engine)
         _add_missing_columns(engine)
     except ProgrammingError as exc:
-        # A read-only user (the hosted server's) can't change the schema; the writer side does it.
         logging.getLogger("fpl_mcp.db").warning("Could not update the schema (%s); assuming it is current.", exc.orig)
     return engine
 

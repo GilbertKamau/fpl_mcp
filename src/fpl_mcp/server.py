@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-"""FPL MCP server.
-
-    fpl-mcp                         stdio, for local clients (Claude Code, Claude Desktop, Cursor, VS Code)
-    fpl-mcp --http --host 0.0.0.0   Streamable HTTP at /mcp, for remote clients (claude.ai, ChatGPT, Grok)
-"""
+"""FPL MCP server: `fpl-mcp` (stdio) or `fpl-mcp --http` (Streamable HTTP at /mcp)."""
 
 import argparse
 import hmac
@@ -45,13 +41,7 @@ def search_players(
     sort_by: str = "total_points",
     limit: int = 20,
 ) -> list[dict]:
-    """Find and rank players.
-
-    position: GKP, DEF, MID or FWD. team: name or short name (e.g. "ARS").
-    sort_by: total_points, form, price, points_per_game, selected_by_percent, minutes,
-    goals_scored, assists, expected_goals, expected_assists, expected_goal_involvements,
-    ict_index, ep_next, bonus, clean_sheets, transfers_in_event, defensive_contribution.
-    """
+    """Find and rank players; position GKP/DEF/MID/FWD, sort_by any stat (e.g. form, price, ep_next)."""
     return queries.search_players(
         name=name,
         position=position,
@@ -67,10 +57,7 @@ def search_players(
 
 @mcp.tool()
 def get_player(player: str) -> dict:
-    """One player's season stats, injury news, last 6 matches and next 5 gameweeks of fixtures.
-
-    player: name (accents optional, e.g. "Odegaard") or FPL id.
-    """
+    """A player's stats, injury news, last 6 matches and next fixtures. player: name or FPL id."""
     return queries.get_player(player)
 
 
@@ -100,12 +87,7 @@ def player_season_history(player: str) -> dict:
 
 @mcp.tool()
 def get_my_team(team_id: int, gameweek: int | None = None) -> dict:
-    """A manager's 15-man squad, captain, bank and rank for a gameweek (default: current),
-    plus availability_alerts for injured, suspended, loaned-out or doubtful players (bench included).
-
-    team_id is the number in the FPL website URL: fantasy.premierleague.com/entry/<team_id>/event/<gw>.
-    Picks for a gameweek only become public after its deadline.
-    """
+    """A manager's squad, bank, rank and availability_alerts. team_id is the number in the FPL entry URL."""
     return queries.my_team(team_id, gameweek)
 
 
@@ -118,11 +100,7 @@ def predict_points(
     gameweeks: int = 1,
     limit: int = 20,
 ) -> dict:
-    """Model expected points for the next 1-5 gameweeks, best first.
-
-    Already adjusted for injury/suspension news. Double gameweeks are summed.
-    Give `player` for one player, or filter by position/team/max_price to rank candidates.
-    """
+    """Expected points for the next 1-5 gameweeks, best first; one player, or filter to rank candidates."""
     return queries.predicted_points(
         player=player, position=position, team=team, max_price=max_price, gameweeks=gameweeks, limit=limit
     )
@@ -130,17 +108,13 @@ def predict_points(
 
 @mcp.tool()
 def model_report() -> dict:
-    """How accurate the expected-points model is: tests on past seasons, and this season's live results
-    week by week, compared with a simple baseline and with FPL's own expected points."""
+    """Model accuracy: past-season tests and this season's live results vs a baseline and FPL's own."""
     return queries.model_report()
 
 
 @mcp.tool()
 def optimal_squad(budget: float = 100.0, gameweeks: int = 3) -> dict:
-    """The best 15-man squad from scratch (e.g. for a Wildcard or a new team) for the next N gameweeks.
-
-    Follows FPL rules: 2 GKP / 5 DEF / 5 MID / 3 FWD, max 3 per club, valid formations, budget in £m.
-    """
+    """Best 15-man squad from scratch (e.g. a Wildcard) for a budget in £m, following FPL rules."""
     return optimizer.optimal_squad(budget=budget, gameweeks=gameweeks)
 
 
@@ -148,12 +122,7 @@ def optimal_squad(budget: float = 100.0, gameweeks: int = 3) -> dict:
 def suggest_transfers(
     team_id: int, free_transfers: int | None = None, max_transfers: int = 2, gameweeks: int = 3
 ) -> dict:
-    """Best transfers for a manager's team over the next N gameweeks, counting -4 hits.
-
-    free_transfers: leave empty to estimate it from the team's history; set it if you know better.
-    Recommends rolling the transfer when no move is worth it. availability_alerts lists players who
-    are out or doubtful in the squad after the suggested transfers; mention them to the user.
-    """
+    """Best transfers over the next N gameweeks after -4 hits; mention any availability_alerts to the user."""
     return optimizer.suggest_transfers(
         team_id, free_transfers=free_transfers, max_transfers=max_transfers, gameweeks=gameweeks
     )
@@ -167,31 +136,25 @@ def pick_captain(team_id: int) -> dict:
 
 @mcp.tool()
 def chip_advice(team_id: int, gameweeks: int = 5) -> dict:
-    """Which chips (Wildcard, Free Hit, Bench Boost, Triple Captain) are still available this half of
-    the season, what each is worth now, the best week for each, and whether to play or save it."""
+    """Chips left this half of the season, what each is worth, and whether to play or save it."""
     return optimizer.chip_advice(team_id, gameweeks=gameweeks)
 
 
 @mcp.tool()
 def refresh_data() -> dict:
-    """Re-pull players, prices, injuries, gameweeks and fixtures from the FPL API (takes a few seconds)."""
+    """Re-pull players, prices, injuries and fixtures from the FPL API."""
     result = ingest.sync_live()
     queries.invalidate_snapshot()
     return result
 
 
 def http_app(token: str | None = None, allow_refresh: bool = False):
-    """ASGI app for remote clients (claude.ai, ChatGPT, Grok, Cursor...) at /mcp.
-
-    Read-only unless allow_refresh: data updates belong to the scheduled jobs, not to the public.
-    With a token, every request except /health needs `Authorization: Bearer <token>`.
-    """
+    """Read-only HTTP app at /mcp; with a token, every request except /health needs it."""
     if not allow_refresh:
         try:
             mcp.remove_tool("refresh_data")
         except ToolError:
-            pass  # already removed
-    # Stateless: no per-client sessions to lose when a free-tier host sleeps or restarts.
+            pass
     app = mcp.streamable_http_app(stateless_http=True, json_response=True, host="0.0.0.0")
     expected = f"Bearer {token}".encode() if token else None
 

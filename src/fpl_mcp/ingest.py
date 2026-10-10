@@ -1,13 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-"""Load FPL data into the database.
-
-    fpl-sync live      players, teams, gameweeks, fixtures (a few seconds)
-    fpl-sync current   this season's per-fixture player history from the FPL API (~1-2 min)
-    fpl-sync history   past seasons from the vaastav dataset (a few minutes the first time)
-    fpl-sync all       everything above
-    fpl-sync weekly    live + current, then retrain the model and refresh predictions
-"""
+"""Load FPL data into the database (fpl-sync live | current | history | all | weekly)."""
 
 import argparse
 import asyncio
@@ -34,8 +27,7 @@ from .db import (
 
 log = logging.getLogger("fpl_mcp.ingest")
 
-POSITIONS = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD", 5: "AM"}  # AM = 2024-25 assistant managers
-# vaastav uses "GK" in later seasons
+POSITIONS = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD", 5: "AM"}
 POSITION_ALIASES = {"GK": "GKP", "GKP": "GKP", "DEF": "DEF", "MID": "MID", "FWD": "FWD", "AM": "AM"}
 
 INT_STATS = [
@@ -89,9 +81,6 @@ def current_season_start(events: list[dict]) -> int:
 def _record(engine, job: str, detail: str, rows: int) -> None:
     with engine.begin() as conn:
         conn.execute(sync_log.insert().values(job=job, detail=detail, rows=rows, finished_at=_now()))
-
-
-# --- Live snapshot -----------------------------------------------------------
 
 
 def sync_live() -> dict:
@@ -220,9 +209,6 @@ def sync_live() -> dict:
     return summary
 
 
-# --- Current season per-fixture history (FPL API) -----------------------------
-
-
 def sync_current_season() -> dict:
     """Pull every player's per-fixture history for this season from element-summary."""
     engine = get_engine()
@@ -244,14 +230,13 @@ def sync_current_season() -> dict:
                     player_code=e.get("code"),
                     name=f"{e.get('first_name', '')} {e.get('second_name', '')}".strip(),
                     position=POSITIONS.get(e["element_type"]),
-                    # The player's team at the time of the fixture, not today's club.
                     team_id=None,
                     was_home=was_home,
                     source="fpl_api",
                 )
             )
 
-    # Work out each row's team from the fixture (handles mid-season transfers).
+    # Team at the time of the fixture, so mid-season transfers are right.
     fixture_teams = {
         f["id"]: (f["team_h"], f["team_a"]) for f in api.fixtures()
     }
@@ -268,16 +253,13 @@ def sync_current_season() -> dict:
     return result
 
 
-# --- Past seasons (vaastav/Fantasy-Premier-League) ----------------------------
-
-
 def _read_csv(client: httpx.Client, url: str) -> pd.DataFrame | None:
     resp = client.get(url)
     if resp.status_code == 404:
         return None
     resp.raise_for_status()
     raw = resp.content
-    for encoding in ("utf-8", "latin-1"):  # older seasons are latin-1
+    for encoding in ("utf-8", "latin-1"):
         try:
             return pd.read_csv(io.StringIO(raw.decode(encoding)), low_memory=False)
         except UnicodeDecodeError:
@@ -291,7 +273,6 @@ def sync_history(seasons: list[str] | None = None) -> dict:
     boot = api.bootstrap()
     current_start = current_season_start(boot["events"])
     if not seasons:
-        # The current season comes from the live API (vaastav lags behind it).
         seasons = [season_label(y) for y in range(FIRST_HISTORY_SEASON, current_start)]
 
     totals: dict[str, int] = {}
@@ -351,7 +332,6 @@ def sync_history(seasons: list[str] | None = None) -> dict:
             if not fixture_teams:
                 _fix_teams_from_majority(rows)
 
-            # A few seasons contain exact duplicate rows; keep the last one per key.
             dedup = {(r["season"], r["element"], r["fixture"]): r for r in rows}
             upsert(engine, player_gameweeks, list(dedup.values()))
             totals[season] = len(dedup)
@@ -363,9 +343,7 @@ def sync_history(seasons: list[str] | None = None) -> dict:
 
 
 def _fix_teams_from_majority(rows: list[dict]) -> None:
-    """Without fixtures.csv, team_id comes from players_raw (the club a player ended the season at),
-    which is wrong for players who moved mid-season. Each side of a fixture is one club, so use the
-    club most of that side's players belong to."""
+    """Without fixtures.csv, use the club most players on each side of a fixture belong to."""
     from collections import Counter
 
     sides: dict[tuple, Counter] = {}
@@ -404,8 +382,8 @@ def _history_row(*, season, element, raw, player_code, name, position, team_id, 
         "opponent_team": _num(raw.get("opponent_team"), int),
         "was_home": was_home,
         "kickoff_time": _ts(raw.get("kickoff_time")),
-        "value": value / 10 if (value := _num(raw.get("value"))) else None,  # stored in tenths
-        "xp": _num(raw.get("xP")),  # FPL expected points; vaastav only, from 2020-21
+        "value": value / 10 if (value := _num(raw.get("value"))) else None,
+        "xp": _num(raw.get("xP")),
         "source": source,
     }
     for col in INT_STATS:

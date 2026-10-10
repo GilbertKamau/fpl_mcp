@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-# Scheduled FPL update. Logs go to data\logs (git-ignored).
-#   -Mode weekly : refresh data, retrain the model, refresh predictions (run after each gameweek)
-#   -Mode news   : refresh prices/injury news and predictions only (run before each deadline)
+# Scheduled update: -Mode weekly (retrain) or news (prices/injuries). Logs to data\logs.
 param([ValidateSet("weekly", "news")][string]$Mode = "weekly")
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -11,8 +9,7 @@ $logDir = Join-Path $root "data\logs"
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $log = Join-Path $logDir ("{0}-{1}.log" -f (Get-Date -Format "yyyyMMdd-HHmm"), $Mode)
 
-# Run through cmd so the tools' stderr logging goes to the file as plain text
-# (Windows PowerShell 5.1 would turn each stderr line into an error record).
+# cmd keeps stderr as plain text (PowerShell 5.1 turns it into errors).
 function Invoke-Step([string]$exe, [string]$arguments) {
     cmd /c "`"$bin\$exe`" $arguments >> `"$log`" 2>&1"
     return $LASTEXITCODE

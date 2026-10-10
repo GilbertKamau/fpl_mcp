@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Gilbert Kamau
-# Remote MCP server (Streamable HTTP at /mcp). Read-only: data and predictions are written
-# by `fpl-sync` / `fpl-model` running elsewhere (e.g. your own machine on a schedule).
+# Read-only remote MCP server at /mcp.
 FROM python:3.12-slim
 
-# libgomp1 is needed by LightGBM's native library.
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 

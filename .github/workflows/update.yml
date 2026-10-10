@@ -1,5 +1,4 @@
-# Keeps the shared database fresh: data, model and predictions.
-# Needs the repository secret DATABASE_URL (a Supabase Session pooler URI with write access).
+# Needs the DATABASE_URL repository secret.
 name: Scheduled update
 
 on:
@@ -23,7 +22,6 @@ permissions:
 
 jobs:
   update:
-    # Forks don't have the database secret, so only run in the main repository.
     if: github.repository == 'GilbertKamau/fpl_mcp'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -35,10 +33,8 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      # Editable install so data/cache sits in the workspace, where actions/cache can save it.
       - run: pip install -e ".[supabase]"
 
-      # Past seasons never change; cache them so each run only downloads the current season.
       - uses: actions/cache@v6
         with:
           path: data/cache

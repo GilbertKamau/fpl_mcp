@@ -19,7 +19,6 @@ def test_password_special_characters_are_encoded(monkeypatch):
     expected = "postgresql+psycopg://postgres.ref:p%40ss%23word@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres.ref:p@ss#word@aws-0-eu-west-1.pooler.supabase.com:5432/postgres")
     assert config.database_url() == expected
-    # Already-encoded passwords are left as they are.
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres.ref:p%40ss%23word@aws-0-eu-west-1.pooler.supabase.com:5432/postgres")
     assert config.database_url() == expected
 
@@ -67,7 +66,7 @@ def test_history_row_parses_vaastav_record():
     assert row["minutes"] == 62 and row["total_points"] == 2
     assert row["value"] == 5.0
     assert row["expected_goals"] == 0.01
-    assert row["assists"] is None  # missing columns become NULL, not 0
+    assert row["assists"] is None
     assert row["kickoff_time"].tzinfo is not None
 
 
@@ -83,7 +82,7 @@ def test_availability_alerts_flag_out_and_doubtful_players(monkeypatch):
     monkeypatch.setattr(queries, "snapshot", lambda: snap)
 
     alerts = queries.availability_alerts([1, 2, 3, 4], starters={1, 3, 4})
-    assert [a["player"] for a in alerts] == ["P4", "P2", "P3"]  # out starters, out bench, then doubtful
+    assert [a["player"] for a in alerts] == ["P4", "P2", "P3"]
     assert alerts[0]["role"] == "starting XI" and alerts[0]["severity"] == "out"
     assert alerts[1]["role"] == "bench" and "No cover" in alerts[1]["impact"]
     assert alerts[2]["severity"] == "doubtful" and "75%" in alerts[2]["impact"]

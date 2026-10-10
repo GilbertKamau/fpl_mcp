@@ -49,9 +49,7 @@ def _rows(stmt) -> list[dict]:
         return [dict(r) for r in conn.execute(stmt).mappings()]
 
 
-# --- Current-season snapshot ------------------------------------------------------
-# players/teams/fixtures/gameweeks are small, so they are read once and kept in memory.
-# A remote database (Supabase) costs ~0.5-1s per round trip; this keeps tools fast.
+# Small current-season tables are cached in memory; remote round trips are slow.
 
 SNAPSHOT_TTL_SECONDS = 600
 _snapshot_lock = threading.Lock()
@@ -117,9 +115,6 @@ def _expected_points(rows: list[dict]) -> dict:
     }
 
 
-# --- Lookups -------------------------------------------------------------------
-
-
 def team_map() -> dict[int, dict]:
     return snapshot()["teams"]
 
@@ -174,9 +169,6 @@ def resolve_player(query: str | int) -> dict:
     raise NotFound(f"'{query}' matches several players: {options}. Use a fuller name or the id.")
 
 
-# --- Formatting --------------------------------------------------------------------
-
-
 def _player_card(p: dict, tm: dict[int, dict]) -> dict:
     team = tm.get(p["team_id"], {})
     card = {
@@ -222,9 +214,6 @@ def _fixture_view(f: dict, team_id: int, tm: dict[int, dict]) -> dict:
         gf, ga = (f["team_h_score"], f["team_a_score"]) if home else (f["team_a_score"], f["team_h_score"])
         view["score"] = f"{gf}-{ga}"
     return view
-
-
-# --- Queries ----------------------------------------------------------------------
 
 
 def gameweek_status() -> dict:
@@ -298,7 +287,6 @@ def search_players(
         rows = [p for p in rows if (p["minutes"] or 0) >= min_minutes]
     if available_only:
         rows = [p for p in rows if p["status"] == "a"]
-    # Highest first, missing values last.
     rows = sorted(rows, key=lambda p: (p[sort_by] is not None, p[sort_by] or 0), reverse=True)
 
     if name:
@@ -399,7 +387,7 @@ def team_summary(team: str) -> dict:
     t = resolve_team(team)
     fx = upcoming_fixtures(t["id"], count=6)
     played = [f for f in snapshot()["fixtures"] if t["id"] in (f["team_h"], f["team_a"]) and f["finished"]]
-    played.reverse()  # most recent first
+    played.reverse()
     tm = team_map()
     results = [_fixture_view(f, t["id"], tm) for f in played]
     scored = conceded = clean_sheets = 0
@@ -452,7 +440,7 @@ def player_season_history(query: str | int) -> dict:
         r = {k: (round(v, 2) if isinstance(v, float) else v) for k, v in r.items()}
         r["fixtures"] = r.pop("appearances_rows")
         if r["xG"] is None:
-            r.pop("xG"), r.pop("xA")  # xG only exists from 2022-23
+            r.pop("xG"), r.pop("xA")
         seasons.append(r)
     if not seasons:
         return {"player": p["web_name"], "seasons": [], "note": "No history loaded; run `fpl-sync history` and `fpl-sync current`."}
@@ -460,10 +448,7 @@ def player_season_history(query: str | int) -> dict:
 
 
 def availability_alerts(player_ids: list[int], starters: set[int] | None = None) -> list[dict]:
-    """Players in a squad who are out or doubtful, worst first.
-
-    Flagged regardless of where they sit: a dead bench spot means no cover when a starter misses.
-    """
+    """Players in a squad who are out or doubtful (bench included), worst first."""
     by_id = snapshot()["players_by_id"]
     tm = team_map()
     alerts = []
@@ -551,9 +536,6 @@ def my_team(team_id: int, gameweek: int | None = None) -> dict:
         ),
         "squad": squad,
     }
-
-
-# --- Model predictions ----------------------------------------------------------------
 
 
 def _require_predictions() -> dict:

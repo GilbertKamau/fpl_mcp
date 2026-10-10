@@ -13,7 +13,7 @@ def test_selling_price_keeps_half_of_rises_rounded_down():
     assert _selling_price(5.0, 5.3) == 5.1
     assert _selling_price(5.0, 5.1) == 5.0
     assert _selling_price(5.0, 5.2) == 5.1
-    assert _selling_price(5.0, 4.8) == 4.8  # falls are passed on in full
+    assert _selling_price(5.0, 4.8) == 4.8
 
 
 def test_free_transfers_bank_up_to_five():
@@ -24,7 +24,6 @@ def test_free_transfers_bank_up_to_five():
 
 def test_free_transfers_used_and_kept_on_wildcard():
     weeks = [{"event": 1, "event_transfers": 0}, {"event": 2, "event_transfers": 1}, {"event": 3, "event_transfers": 9}]
-    # GW2: had 1, used 1 -> 0, +1 = 1. GW3 wildcard: kept, +1 = 2.
     assert estimate_free_transfers({"current": weeks, "chips": [{"event": 3, "name": "wildcard"}]}) == 2
 
 
@@ -77,7 +76,6 @@ def test_optimal_squad_follows_fpl_rules(fake_pool):
 def test_transfers_take_the_free_one_and_avoid_bad_hits(fake_pool):
     first = solve([7, 8], budget=100.0)
     squad = {i: fake_pool["players_by_id"][i]["price"] for i in first.squad}
-    # Make one outsider clearly better than anyone in the squad at a similar position.
     outsider = next(p for p in fake_pool["players"] if p["id"] not in squad and p["position"] == "MID")
     fake_pool["expected_points"]["by_player"][outsider["id"]] = {7: 20.0, 8: 20.0}
     bank = 100.0 - sum(squad.values())

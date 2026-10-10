@@ -1,13 +1,13 @@
-# Render blueprint: New > Blueprint > pick this repo. Set the secrets when prompted.
+# Render: New > Blueprint > this repo.
 services:
   - type: web
     name: fpl-mcp
     runtime: docker
-    region: frankfurt  # near the Supabase database (eu-west-1)
-    plan: free  # sleeps after ~15 min idle; the first request after that takes ~1 min
+    region: frankfurt
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        sync: false  # Supabase Session pooler URI, ideally for the read-only role (scripts/supabase_readonly_role.sql)
+        sync: false
       - key: MCP_AUTH_TOKEN
-        sync: false  # optional; leave empty for claude.ai / ChatGPT, which can't send a fixed token
+        sync: false
