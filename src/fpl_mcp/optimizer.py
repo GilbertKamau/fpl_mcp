@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Squad, transfer, captain and chip decisions as integer programs (PuLP + HiGHS).
 
 Everything is driven by the model's expected points (the predictions table). Points for

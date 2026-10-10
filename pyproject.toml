@@ -5,7 +5,7 @@ description = "MCP server for Fantasy Premier League data, predictions and squad
 requires-python = ">=3.12"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{ name = "Gilbert Kamau" }]
 keywords = ["fpl", "fantasy-premier-league", "mcp", "model-context-protocol", "football"]
 dependencies = [

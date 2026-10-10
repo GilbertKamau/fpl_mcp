@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 Gilbert Kamau
 -- A read-only database user for the public MCP server.
 -- Run in Supabase: SQL Editor > New query. Replace the password first.
 -- Then use this user in the hosted server's DATABASE_URL (Session pooler format):

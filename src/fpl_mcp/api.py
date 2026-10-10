@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Thin client for the public (read-only, no login) FPL API."""
 
 import asyncio

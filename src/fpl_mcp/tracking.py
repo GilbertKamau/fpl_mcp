@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Score archived predictions against what actually happened, gameweek by gameweek.
 
 Only the prediction made for the very next gameweek is scored (the last one saved before that

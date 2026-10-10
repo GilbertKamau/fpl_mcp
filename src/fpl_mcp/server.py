@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """FPL MCP server.
 
     fpl-mcp                         stdio, for local clients (Claude Code, Claude Desktop, Cursor, VS Code)

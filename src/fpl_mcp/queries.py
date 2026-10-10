@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Read-only queries behind the MCP tools."""
 
 import threading

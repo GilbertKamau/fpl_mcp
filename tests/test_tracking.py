@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 import pandas as pd
 
 from fpl_mcp.tracking import summarise

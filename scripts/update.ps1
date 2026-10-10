@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 # Scheduled FPL update. Logs go to data\logs (git-ignored).
 #   -Mode weekly : refresh data, retrain the model, refresh predictions (run after each gameweek)
 #   -Mode news   : refresh prices/injury news and predictions only (run before each deadline)

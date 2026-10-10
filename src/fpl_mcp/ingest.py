@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Load FPL data into the database.
 
     fpl-sync live      players, teams, gameweeks, fixtures (a few seconds)

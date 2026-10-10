@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Expected-points model: features, walk-forward evaluation, training and predictions.
 
     fpl-model evaluate   walk-forward test on the last complete seasons (nothing saved)

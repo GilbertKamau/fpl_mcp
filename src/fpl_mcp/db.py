@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Database schema and helpers. Works on SQLite and Postgres (Supabase)."""
 
 import logging

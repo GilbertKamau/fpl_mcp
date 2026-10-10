@@ -308,11 +308,19 @@ or Windows Task Scheduler; `scripts\update.ps1` wraps both modes for Windows and
 ## Contributing
 
 Issues and pull requests are welcome. Please run `pytest` before opening a PR, and never commit
-`.env`, `data/` or `models/`.
+`.env`, `data/` or `models/`. By submitting a contribution you agree that it is licensed under
+this project's MIT License.
+
+## Licence
+
+Copyright (c) 2026 Gilbert Kamau. Released under the [MIT License](LICENSE): you may use, copy,
+modify and distribute the code, including commercially, as long as you keep the copyright and
+licence notice. Third-party software and data are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Credits and disclaimer
 
-Historical data comes from [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League);
-live data from the public FPL API. This project is not affiliated with or endorsed by the Premier
-League or Fantasy Premier League. Use the FPL API responsibly, and treat predictions as estimates,
-not guarantees.
+Historical data comes from [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League)
+(code under the MIT License); live data from the public FPL API. Fantasy Premier League data is
+the property of the Premier League; the MIT License covers this project's code only, not the data.
+This project is not affiliated with or endorsed by the Premier League or Fantasy Premier League.
+Use the FPL API responsibly, and treat predictions as estimates, not guarantees.

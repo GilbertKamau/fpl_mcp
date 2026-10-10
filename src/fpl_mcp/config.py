@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 """Settings loaded from the environment (or a .env file in the project root)."""
 
 import os

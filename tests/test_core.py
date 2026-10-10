@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Gilbert Kamau
 from sqlalchemy import create_engine, select
 
 from fpl_mcp import config
