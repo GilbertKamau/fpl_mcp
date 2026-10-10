@@ -1,6 +1,6 @@
 [project]
 name = "fpl-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for Fantasy Premier League data, predictions and squad advice"
 requires-python = ">=3.12"
 readme = "README.md"

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.GilbertKamau/fpl-mcp",
+  "title": "Fantasy Premier League (FPL)",
+  "description": "FPL data, points predictions, and transfer, captain and chip advice for any team.",
+  "repository": {
+    "url": "https://github.com/GilbertKamau/fpl_mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/GilbertKamau/fpl_mcp",
+  "version": "0.2.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://fpl-mcp-9tiv.onrender.com/mcp"
+    }
+  ]
+}

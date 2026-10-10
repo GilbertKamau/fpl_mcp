@@ -13,6 +13,8 @@ captains and chips. Data lives in SQLite or Supabase.
 server in your AI app (see [Connecting AI clients](#connecting-ai-clients)). It runs on a free plan,
 so the first request after a quiet spell can take about a minute while it wakes up.
 
+<p align="center"><img src="docs/demo.svg" alt="An AI assistant answering 'Best midfielders under £7m for the next 3 gameweeks?' and 'Who are the best captains for GW7?' with fpl-mcp's predictions" width="760"></p>
+
 Example questions: *"Who are the best midfielders under £7m for the next 3 gameweeks?"*,
 *"Suggest transfers for team 1234567"*, *"Should I play my Bench Boost this week?"*
 
