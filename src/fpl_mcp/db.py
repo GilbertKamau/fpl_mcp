@@ -15,6 +15,8 @@ from sqlalchemy import (
     Table,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
@@ -171,6 +173,7 @@ player_gameweeks = Table(
     Column("transfers_balance", Integer),
     Column("team_h_score", Integer),
     Column("team_a_score", Integer),
+    Column("xp", Float),  # FPL's own expected points for the fixture's gameweek (vaastav, 2020-21 on)
     Column("source", String(16)),  # "vaastav" or "fpl_api"
 )
 
@@ -201,6 +204,33 @@ model_runs = Table(
     Column("note", Text),
 )
 
+model_artifacts = Table(
+    "model_artifacts",
+    metadata,
+    Column("version", String(32), primary_key=True),
+    Column("model_text", Text, nullable=False),  # LightGBM model file contents
+    Column("features", Text),  # JSON list, in training order
+    Column("created_at", DateTime(timezone=True)),
+)
+
+# Every prediction ever made, kept so it can be scored against what actually happened.
+prediction_history = Table(
+    "prediction_history",
+    metadata,
+    Column("season", String(7), primary_key=True),
+    Column("player_id", Integer, primary_key=True),
+    Column("fixture_id", Integer, primary_key=True),
+    Column("first_gameweek", Integer, primary_key=True),  # the next gameweek when the prediction was made
+    Column("gameweek", Integer, index=True),
+    Column("expected_points", Float),
+    Column("raw_expected_points", Float),
+    Column("availability", Float),
+    Column("baseline_points", Float),  # average points over the player's last 6 matches
+    Column("fpl_expected_points", Float),  # FPL's ep_next at the time (first gameweek only)
+    Column("model_version", String(32)),
+    Column("created_at", DateTime(timezone=True)),
+)
+
 sync_log = Table(
     "sync_log",
     metadata,
@@ -221,10 +251,26 @@ def get_engine() -> Engine:
     engine = create_engine(url, **kwargs)
     try:
         metadata.create_all(engine)
+        _add_missing_columns(engine)
     except ProgrammingError as exc:
-        # A read-only user (the hosted server's) can't create tables; that's fine once they exist.
-        logging.getLogger("fpl_mcp.db").warning("Could not create tables (%s); assuming they exist.", exc.orig)
+        # A read-only user (the hosted server's) can't change the schema; the writer side does it.
+        logging.getLogger("fpl_mcp.db").warning("Could not update the schema (%s); assuming it is current.", exc.orig)
     return engine
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """create_all() never alters existing tables, so add columns introduced after a table was created."""
+    existing = inspect(engine)
+    for table in metadata.sorted_tables:
+        if not existing.has_table(table.name):
+            continue
+        present = {c["name"] for c in existing.get_columns(table.name)}
+        for column in table.columns:
+            if column.name not in present:
+                kind = column.type.compile(dialect=engine.dialect)
+                with engine.begin() as conn:
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {column.name} {kind}'))
+                logging.getLogger("fpl_mcp.db").info("Added column %s.%s", table.name, column.name)
 
 
 def upsert(engine: Engine, table: Table, rows: Sequence[dict], chunk_size: int = 2000) -> int:

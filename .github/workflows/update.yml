@@ -1,0 +1,57 @@
+# Keeps the shared database fresh: data, model and predictions.
+# Needs the repository secret DATABASE_URL (a Supabase Session pooler URI with write access).
+name: Scheduled update
+
+on:
+  schedule:
+    - cron: "0 6 * * 2" # Tuesday 06:00 UTC, after the gameweek: refresh data, retrain, predict
+    - cron: "0 6 * * 5" # Friday 06:00 UTC, before the deadline: prices and injury news, predict
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "weekly = refresh + retrain + predict; news = prices/injuries + predict"
+        type: choice
+        options: [news, weekly]
+        default: news
+
+concurrency:
+  group: scheduled-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    # Forks don't have the database secret, so only run in the main repository.
+    if: github.repository == 'GilbertKamau/fpl_mcp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install ".[supabase]"
+
+      # Past seasons never change; cache them so each run only downloads the current season.
+      - uses: actions/cache@v6
+        with:
+          path: data/cache
+          key: history-${{ hashFiles('src/fpl_mcp/ingest.py', 'src/fpl_mcp/db.py') }}
+
+      - name: Update
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode || (github.event.schedule == '0 6 * * 2' && 'weekly' || 'news') }}
+        run: |
+          echo "Mode: $MODE"
+          if [ "$MODE" = "weekly" ]; then
+            fpl-sync weekly
+          else
+            fpl-sync live
+            fpl-model predict
+          fi

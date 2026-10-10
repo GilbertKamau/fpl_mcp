@@ -127,7 +127,8 @@ def predict_points(
 
 @mcp.tool()
 def model_report() -> dict:
-    """How accurate the expected-points model is: walk-forward test results versus a simple baseline."""
+    """How accurate the expected-points model is: tests on past seasons, and this season's live results
+    week by week, compared with a simple baseline and with FPL's own expected points."""
     return queries.model_report()
 
 

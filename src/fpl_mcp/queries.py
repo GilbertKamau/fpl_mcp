@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import and_, func, select
 
-from . import api
+from . import api, tracking
 from .config import season_label
 from .db import fixtures, gameweeks, get_engine, model_runs, player_gameweeks, players, predictions, teams
 
@@ -589,7 +589,11 @@ def model_report() -> dict:
         },
         "how_tested": (
             "For each test season, the model was trained only on earlier seasons and predicted every "
-            "fixture one match ahead. Baseline = the player's average points over their last 6 matches."
+            "fixture one match ahead. Baseline = the player's average points over their last 6 matches. "
+            "Past-season tests don't include injury news (there is no historical record of it), so they "
+            "understate live accuracy. The fair comparison with FPL's own expected points is "
+            "live_this_season, which records both before each deadline."
         ),
+        "live_this_season": tracking.live_accuracy(snapshot()["season"]),
         "predictions_made_at": _iso(snapshot()["expected_points"]["created_at"]),
     }

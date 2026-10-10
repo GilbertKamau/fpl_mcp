@@ -1,5 +1,6 @@
 # fpl-mcp
 
+[![Tests](https://github.com/GilbertKamau/fpl_mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/GilbertKamau/fpl_mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 An open-source [MCP](https://modelcontextprotocol.io) server for Fantasy Premier League that works
@@ -38,7 +39,7 @@ fpl-model all      # train the model and write predictions (~3-6 min the first t
 | `all` | All of the above | |
 | `weekly` | `live` + `current`, then retrain and refresh predictions | ~5 min |
 
-`fpl-model` jobs: `evaluate` (test only), `train`, `predict`, `all` (train + predict).
+`fpl-model` jobs: `evaluate` (test only), `compare` (feature sets side by side), `train`, `predict`, `all` (train + predict).
 Add `--refresh-cache` after re-loading history, so the local cache of past seasons is rebuilt.
 
 ## Database
@@ -54,6 +55,8 @@ Tables are created automatically.
 | `player_gameweeks` | One row per player per match, every season. `player_code` links a player across seasons |
 | `season_teams` | Team id → name for each season |
 | `predictions` | Expected points per player per upcoming fixture |
+| `prediction_history` | Every prediction made, with benchmarks, for live scoring |
+| `model_artifacts` | Trained models |
 | `model_runs` | Every training run, its test results, and whether it was accepted |
 | `sync_log` | When each sync ran |
 
@@ -66,24 +69,43 @@ pre-commit hook refuses to commit them.
 ## Prediction model
 
 LightGBM predicts each player's points per fixture from information available before kick-off:
-rolling form over the last 3/6/12 matches (points, minutes, xG, xA, bonus, BPS, ICT, defensive
-contributions...), price, position, home/away, and both clubs' recent goals and xG for/against.
+
+- **Form:** rolling averages over the last 1, 3, 6, 12 and 38 matches (points, minutes, starts,
+  xG, xA, bonus, BPS, ICT, defensive contributions...)
+- **Market:** ownership and net transfers that gameweek, as percentiles (the crowd's read on fitness and form)
+- **Context:** price, position, home/away, days since the last match
+- **Team strength:** both clubs' recent goals and xG for and against
+
 A gameweek's expected points is the sum over its fixtures, so double gameweeks count twice.
 Injury and suspension news scales the next gameweek's prediction by FPL's chance of playing.
+The trained model is stored in the database, so any machine can make predictions with it.
 
-**Testing.** Walk-forward: for each of the last three complete seasons, the model is trained only
-on earlier seasons and predicts every fixture. The baseline is the player's average points over
-their last 6 matches. Latest results:
+**Testing on past seasons.** Walk-forward: for each of the last three complete seasons, the model
+is trained only on earlier seasons and predicts every fixture. The baseline is the player's average
+points over their last 6 matches.
 
 | Season | Model MAE | Baseline MAE | Regular starters: model / baseline |
 |---|---|---|---|
-| 2023-24 | 0.955 | 0.999 | 2.21 / 2.40 |
-| 2024-25 | 1.006 | 1.053 | 2.22 / 2.41 |
-| 2025-26 | 0.982 | 1.055 | 2.29 / 2.55 |
+| 2023-24 | 0.931 | 0.999 | 2.19 / 2.40 |
+| 2024-25 | 0.988 | 1.053 | 2.20 / 2.41 |
+| 2025-26 | 0.954 | 1.055 | 2.26 / 2.55 |
 
-A retrained model is only used if it beats the baseline and is no worse than the current model.
+That is 7.5% better than the baseline overall. Adding last-match form, season-long form and the
+market features improved the average MAE from 0.982 to 0.958 and was better in every test season
+(`fpl-model compare` reruns this). A retrained model is only used if it beats the baseline and is
+no worse than the current model.
+
+Past-season tests have no injury news (there's no historical record of it), so they understate
+live accuracy. They also can't fairly be compared with FPL's own expected points: the historical
+`xP` column includes injury news, and its 2025-26 values are on a different scale.
+
+**Live tracking.** Every prediction is archived. After each gameweek, the prediction made before
+the deadline is scored against actual points, next to two benchmarks recorded at the same moment:
+the 6-match baseline and FPL's own expected points (`ep_next`). It also compares what each method's
+top 20 players actually scored. `model_report` shows the running results.
+
 FPL points are very noisy (a 2-pointer and a 15-pointer can come from the same performance), so
-treat predictions as estimates. Ask `model_report` for the current numbers.
+treat predictions as estimates.
 
 ## Optimizer
 
@@ -253,17 +275,19 @@ access controls.
 
 ## Scheduled updates
 
-On Windows, `scripts\update.ps1` runs the updates and logs to `data\logs`. Two scheduled tasks
-call it (create them with `schtasks`, or in Task Scheduler):
+[GitHub Actions](.github/workflows/update.yml) keeps the shared database fresh:
 
-| Task | When | Mode |
+| When (UTC) | Mode | What it does |
 |---|---|---|
-| FPL MCP weekly update | Tuesday 08:00 | `weekly`: refresh data, retrain, predict |
-| FPL MCP news refresh | Friday 08:00 | `news`: refresh prices/injuries, predict |
+| Tuesday 06:00 | `weekly` | Refresh data and results, retrain, predict |
+| Friday 06:00 | `news` | Refresh prices and injury news, predict |
 
-They run only while you're logged in. On macOS/Linux, use cron instead:
-`0 8 * * 2 cd /path/to/fpl_mcp && .venv/bin/fpl-sync weekly`. Manage them in Task Scheduler, or remove them with
-`schtasks /Delete /TN "FPL MCP weekly update"` (and the same for "FPL MCP news refresh").
+Run it by hand from the Actions tab (Scheduled update > Run workflow). It needs a repository secret
+`DATABASE_URL` with write access, and only runs in the main repository, not in forks. To run your
+own copy, add the secret to your fork and change the `if:` line in the workflow.
+
+Without GitHub Actions, run `fpl-sync weekly` (or `fpl-sync live` + `fpl-model predict`) from cron
+or Windows Task Scheduler; `scripts\update.ps1` wraps both modes for Windows and logs to `data\logs`.
 
 ## Tests
 
@@ -275,9 +299,9 @@ They run only while you're logged in. On macOS/Linux, use cron instead:
 
 1. ~~Data pipeline (FPL API + vaastav → SQLite/Supabase)~~
 2. ~~Read-only MCP tools~~
-3. ~~Points prediction: LightGBM with walk-forward validation against a rolling-average baseline~~
+3. ~~Points prediction: LightGBM with walk-forward validation against a rolling-average baseline~~ (plus live tracking against FPL's own expected points)
 4. ~~Optimizer: best squad, transfers, captain, chip advice~~
-5. ~~Scheduled updates (sync → retrain → predict)~~
+5. ~~Scheduled updates (sync → retrain → predict) on GitHub Actions~~
 6. ~~HTTP hosting for claude.ai, ChatGPT, Grok and other remote clients~~
 7. Optional: apply changes to your FPL team (preview-only by default)
 

@@ -403,6 +403,7 @@ def _history_row(*, season, element, raw, player_code, name, position, team_id, 
         "was_home": was_home,
         "kickoff_time": _ts(raw.get("kickoff_time")),
         "value": value / 10 if (value := _num(raw.get("value"))) else None,  # stored in tenths
+        "xp": _num(raw.get("xP")),  # FPL expected points; vaastav only, from 2020-21
         "source": source,
     }
     for col in INT_STATS:
