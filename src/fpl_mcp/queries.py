@@ -10,7 +10,7 @@ from sqlalchemy import and_, func, select
 
 from . import api
 from .config import season_label
-from .db import fixtures, gameweeks, get_engine, player_gameweeks, players, teams
+from .db import fixtures, gameweeks, get_engine, model_runs, player_gameweeks, players, predictions, teams
 
 SORTABLE = {
     "total_points", "form", "price", "points_per_game", "selected_by_percent", "minutes",
@@ -73,6 +73,10 @@ def snapshot() -> dict:
             team_rows = [dict(r) for r in conn.execute(select(teams)).mappings()]
             fixture_rows = [dict(r) for r in conn.execute(select(fixtures)).mappings()]
             gw_rows = [dict(r) for r in conn.execute(select(gameweeks).order_by(gameweeks.c.id)).mappings()]
+            pred_rows = [dict(r) for r in conn.execute(select(predictions)).mappings()]
+            model_row = conn.execute(
+                select(model_runs).where(model_runs.c.accepted.is_(True)).order_by(model_runs.c.trained_at.desc()).limit(1)
+            ).mappings().first()
         if not player_rows:
             raise NotFound("The database is empty. Run `fpl-sync live` (or the refresh_data tool) first.")
         fixture_rows.sort(key=lambda f: (f["event"] or 99, _iso(f["kickoff_time"]) or ""))
@@ -87,9 +91,28 @@ def snapshot() -> dict:
             "fixtures": fixture_rows,
             "gameweeks": gw_rows,
             "season": season,
+            "expected_points": _expected_points(pred_rows),
+            "model": dict(model_row) if model_row else None,
         }
         _snapshot_loaded_at = time.monotonic()
         return _snapshot
+
+
+def _expected_points(rows: list[dict]) -> dict:
+    """player id -> gameweek -> expected points (summed over double-gameweek fixtures)."""
+    by_player: dict[int, dict[int, float]] = {}
+    for r in rows:
+        weeks = by_player.setdefault(r["player_id"], {})
+        weeks[r["gameweek"]] = weeks.get(r["gameweek"], 0.0) + (r["expected_points"] or 0.0)
+    availability = {}
+    for r in rows:
+        availability.setdefault(r["player_id"], {})[r["gameweek"]] = r["availability"]
+    return {
+        "by_player": by_player,
+        "availability": availability,
+        "gameweeks": sorted({r["gameweek"] for r in rows}),
+        "created_at": max((r["created_at"] for r in rows), default=None),
+    }
 
 
 # --- Lookups -------------------------------------------------------------------
@@ -482,4 +505,91 @@ def my_team(team_id: int, gameweek: int | None = None) -> dict:
         "transfer_cost_this_gw": eh.get("event_transfers_cost"),
         "active_chip": picks.get("active_chip"),
         "squad": squad,
+    }
+
+
+# --- Model predictions ----------------------------------------------------------------
+
+
+def _require_predictions() -> dict:
+    ep = snapshot()["expected_points"]
+    if not ep["gameweeks"]:
+        raise NotFound("No predictions yet. Run `fpl-model all` (train + predict) first.")
+    return ep
+
+
+def predicted_points(
+    player: str | None = None,
+    position: str | None = None,
+    team: str | None = None,
+    max_price: float | None = None,
+    gameweeks: int = 1,
+    limit: int = 20,
+) -> dict:
+    ep = _require_predictions()
+    gws = ep["gameweeks"][: max(1, min(gameweeks, len(ep["gameweeks"])))]
+    tm = team_map()
+
+    if player:
+        pool = [resolve_player(player)]
+    else:
+        pool = search_players(position=position, team=team, max_price=max_price, limit=1000)
+        pool = [snapshot()["players_by_id"][p["id"]] for p in pool]
+
+    rows = []
+    for p in pool:
+        weeks = ep["by_player"].get(p["id"], {})
+        per_gw = {g: round(weeks.get(g, 0.0), 2) for g in gws}
+        total = round(sum(per_gw.values()), 2)
+        row = {
+            "name": p["web_name"],
+            "team": tm.get(p["team_id"], {}).get("short_name"),
+            "position": p["position"],
+            "price": p["price"],
+            "expected_points": total,
+            "per_gameweek": per_gw,
+            "points_per_million": round(total / p["price"], 2) if p["price"] else None,
+        }
+        avail = ep["availability"].get(p["id"], {}).get(gws[0])
+        if avail is not None and avail < 1:
+            row["availability_next_gw"] = avail
+            row["news"] = p["news"]
+        rows.append(row)
+    rows.sort(key=lambda r: -r["expected_points"])
+    model = snapshot()["model"]
+    return {
+        "gameweeks": gws,
+        "model_version": model["version"] if model else None,
+        "players": rows[: max(1, min(limit, 100))],
+    }
+
+
+def model_report() -> dict:
+    import json
+
+    model = snapshot()["model"]
+    if not model:
+        raise NotFound("No accepted model yet. Run `fpl-model train`.")
+    metrics = json.loads(model["metrics"])
+    return {
+        "version": model["version"],
+        "trained_at": _iso(model["trained_at"]),
+        "walk_forward_mae": round(model["mae"], 3),
+        "baseline_mae": round(model["baseline_mae"], 3),
+        "improvement_vs_baseline": f"{(1 - model['mae'] / model['baseline_mae']) * 100:.1f}%",
+        "by_season": {
+            season: {
+                "model_mae": m["model"]["mae"],
+                "baseline_mae": m["baseline"]["mae"],
+                "model_corr": m["model"]["corr"],
+                "regular_starters_model_mae": m["regulars_model"]["mae"],
+                "regular_starters_baseline_mae": m["regulars_baseline"]["mae"],
+            }
+            for season, m in metrics.items()
+        },
+        "how_tested": (
+            "For each test season, the model was trained only on earlier seasons and predicted every "
+            "fixture one match ahead. Baseline = the player's average points over their last 6 matches."
+        ),
+        "predictions_made_at": _iso(snapshot()["expected_points"]["created_at"]),
     }

@@ -2,14 +2,16 @@
 
 from mcp.server.mcpserver import MCPServer
 
-from . import ingest, queries
+from . import ingest, optimizer, queries
 
 mcp = MCPServer(
     "fpl",
     instructions=(
         "Fantasy Premier League data: players, teams, fixtures, gameweeks and managers' squads. "
         "Prices are in £m. Fixture difficulty is FPL's 1 (easy) to 5 (hard) rating. "
-        "Positions are GKP, DEF, MID, FWD. If data looks stale, call refresh_data."
+        "Positions are GKP, DEF, MID, FWD. Expected points come from a model (see model_report); "
+        "treat them as estimates. For a manager's team, ask for their FPL team id (the number in "
+        "fantasy.premierleague.com/entry/<id>/). If data looks stale, call refresh_data."
     ),
 )
 
@@ -93,6 +95,67 @@ def get_my_team(team_id: int, gameweek: int | None = None) -> dict:
     Picks for a gameweek only become public after its deadline.
     """
     return queries.my_team(team_id, gameweek)
+
+
+@mcp.tool()
+def predict_points(
+    player: str | None = None,
+    position: str | None = None,
+    team: str | None = None,
+    max_price: float | None = None,
+    gameweeks: int = 1,
+    limit: int = 20,
+) -> dict:
+    """Model expected points for the next 1-5 gameweeks, best first.
+
+    Already adjusted for injury/suspension news. Double gameweeks are summed.
+    Give `player` for one player, or filter by position/team/max_price to rank candidates.
+    """
+    return queries.predicted_points(
+        player=player, position=position, team=team, max_price=max_price, gameweeks=gameweeks, limit=limit
+    )
+
+
+@mcp.tool()
+def model_report() -> dict:
+    """How accurate the expected-points model is: walk-forward test results versus a simple baseline."""
+    return queries.model_report()
+
+
+@mcp.tool()
+def optimal_squad(budget: float = 100.0, gameweeks: int = 3) -> dict:
+    """The best 15-man squad from scratch (e.g. for a Wildcard or a new team) for the next N gameweeks.
+
+    Follows FPL rules: 2 GKP / 5 DEF / 5 MID / 3 FWD, max 3 per club, valid formations, budget in £m.
+    """
+    return optimizer.optimal_squad(budget=budget, gameweeks=gameweeks)
+
+
+@mcp.tool()
+def suggest_transfers(
+    team_id: int, free_transfers: int | None = None, max_transfers: int = 2, gameweeks: int = 3
+) -> dict:
+    """Best transfers for a manager's team over the next N gameweeks, counting -4 hits.
+
+    free_transfers: leave empty to estimate it from the team's history; set it if you know better.
+    Recommends rolling the transfer when no move is worth it.
+    """
+    return optimizer.suggest_transfers(
+        team_id, free_transfers=free_transfers, max_transfers=max_transfers, gameweeks=gameweeks
+    )
+
+
+@mcp.tool()
+def pick_captain(team_id: int) -> dict:
+    """Captain, vice-captain and the top 5 captaincy options in a manager's current squad for next gameweek."""
+    return optimizer.pick_captain(team_id)
+
+
+@mcp.tool()
+def chip_advice(team_id: int, gameweeks: int = 5) -> dict:
+    """Which chips (Wildcard, Free Hit, Bench Boost, Triple Captain) are still available this half of
+    the season, what each is worth now, the best week for each, and whether to play or save it."""
+    return optimizer.chip_advice(team_id, gameweeks=gameweeks)
 
 
 @mcp.tool()

@@ -172,6 +172,33 @@ player_gameweeks = Table(
     Column("source", String(16)),  # "vaastav" or "fpl_api"
 )
 
+# --- Model outputs -----------------------------------------------------------------
+
+predictions = Table(
+    "predictions",
+    metadata,
+    Column("player_id", Integer, primary_key=True),
+    Column("fixture_id", Integer, primary_key=True),
+    Column("gameweek", Integer, index=True),
+    Column("expected_points", Float),  # after the availability adjustment
+    Column("raw_expected_points", Float),  # model output assuming the player is available
+    Column("availability", Float),  # 0-1 multiplier from injury/suspension news
+    Column("model_version", String(32)),
+    Column("created_at", DateTime(timezone=True)),
+)
+
+model_runs = Table(
+    "model_runs",
+    metadata,
+    Column("version", String(32), primary_key=True),
+    Column("trained_at", DateTime(timezone=True)),
+    Column("accepted", Boolean),  # only accepted models are used for predictions
+    Column("mae", Float),  # walk-forward MAE across the evaluation seasons
+    Column("baseline_mae", Float),
+    Column("metrics", Text),  # JSON: per-season details
+    Column("note", Text),
+)
+
 sync_log = Table(
     "sync_log",
     metadata,

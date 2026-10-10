@@ -4,6 +4,7 @@
     fpl-sync current   this season's per-fixture player history from the FPL API (~1-2 min)
     fpl-sync history   past seasons from the vaastav dataset (a few minutes the first time)
     fpl-sync all       everything above
+    fpl-sync weekly    live + current, then retrain the model and refresh predictions
 """
 
 import argparse
@@ -345,24 +346,47 @@ def sync_history(seasons: list[str] | None = None) -> dict:
                     )
                 )
 
+            if not fixture_teams:
+                _fix_teams_from_majority(rows)
+
             # A few seasons contain exact duplicate rows; keep the last one per key.
             dedup = {(r["season"], r["element"], r["fixture"]): r for r in rows}
             upsert(engine, player_gameweeks, list(dedup.values()))
             totals[season] = len(dedup)
 
-            if team_list is not None:
-                st = team_list[team_list["season"] == season]
-                upsert(
-                    engine,
-                    season_teams,
-                    [
-                        {"season": season, "team_id": int(t.team), "team_name": t.team_name}
-                        for t in st.itertuples(index=False)
-                    ],
-                )
+            upsert(engine, season_teams, _season_team_rows(client, season, team_list))
 
     _record(engine, "history", str(totals), sum(totals.values()))
     return totals
+
+
+def _fix_teams_from_majority(rows: list[dict]) -> None:
+    """Without fixtures.csv, team_id comes from players_raw (the club a player ended the season at),
+    which is wrong for players who moved mid-season. Each side of a fixture is one club, so use the
+    club most of that side's players belong to."""
+    from collections import Counter
+
+    sides: dict[tuple, Counter] = {}
+    for r in rows:
+        if r["team_id"] is not None:
+            sides.setdefault((r["fixture"], r["was_home"]), Counter())[r["team_id"]] += 1
+    for r in rows:
+        counts = sides.get((r["fixture"], r["was_home"]))
+        if counts:
+            r["team_id"] = counts.most_common(1)[0][0]
+
+
+def _season_team_rows(client: httpx.Client, season: str, team_list: pd.DataFrame | None) -> list[dict]:
+    """Team id -> name for a season: master_team_list.csv, else that season's teams.csv."""
+    if team_list is not None:
+        st = team_list[team_list["season"] == season]
+        if not st.empty:
+            return [{"season": season, "team_id": int(t.team), "team_name": t.team_name} for t in st.itertuples(index=False)]
+    teams_csv = _read_csv(client, f"{VAASTAV_RAW}/{season}/teams.csv")
+    if teams_csv is None:
+        log.warning("No team names for %s", season)
+        return []
+    return [{"season": season, "team_id": int(t.id), "team_name": t.name} for t in teams_csv.itertuples(index=False)]
 
 
 def _history_row(*, season, element, raw, player_code, name, position, team_id, was_home, source) -> dict:
@@ -390,17 +414,23 @@ def _history_row(*, season, element, raw, player_code, name, position, team_id, 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Load FPL data into the database")
-    parser.add_argument("job", choices=["live", "current", "history", "all"])
+    parser.add_argument("job", choices=["live", "current", "history", "all", "weekly"])
     parser.add_argument("--seasons", nargs="*", help="e.g. 2023-24 2024-25 (history only)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    if args.job in ("live", "all"):
+    if args.job in ("live", "all", "weekly"):
         print("live:", sync_live())
     if args.job in ("history", "all"):
         print("history:", sync_history(args.seasons))
-    if args.job in ("current", "all"):
+    if args.job in ("current", "all", "weekly"):
         print("current:", sync_current_season())
+    if args.job == "weekly":
+        from . import model
+
+        print("train:", model.train())
+        print("predict:", model.predict())
 
 
 if __name__ == "__main__":
