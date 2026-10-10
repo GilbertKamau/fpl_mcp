@@ -1,0 +1,38 @@
+{
+  "name": "fpl-mcp-server",
+  "version": "0.2.0",
+  "description": "Fantasy Premier League MCP server: data, points predictions, and transfer, captain and chip advice.",
+  "mcpName": "io.github.GilbertKamau/fpl-mcp",
+  "bin": {
+    "fpl-mcp-server": "bin/fpl-mcp-server.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "mcp-remote": "^0.14.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "fpl",
+    "fantasy-premier-league",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol"
+  ],
+  "author": "Gilbert Kamau",
+  "license": "MIT",
+  "homepage": "https://github.com/GilbertKamau/fpl_mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GilbertKamau/fpl_mcp.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/GilbertKamau/fpl_mcp/issues"
+  }
+}
