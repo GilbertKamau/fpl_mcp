@@ -8,7 +8,18 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/GilbertKamau/fpl_mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "fpl-mcp-server",
+      "version": "0.2.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
   "remotes": [
     {
       "type": "streamable-http",
