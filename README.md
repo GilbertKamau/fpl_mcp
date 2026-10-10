@@ -9,9 +9,13 @@ past seasons (2016-17 onward) from the [vaastav dataset](https://github.com/vaas
 predicts every player's points for the next five gameweeks, and recommends squads, transfers,
 captains and chips. Data lives in SQLite or Supabase.
 
-**Try it without installing anything:** add `https://fpl-mcp-9tiv.onrender.com/mcp` as a remote MCP
-server in your AI app (see [Connecting AI clients](#connecting-ai-clients)). It runs on a free plan,
-so the first request after a quiet spell can take about a minute while it wakes up.
+**Try it without installing anything:**
+
+- Remote URL: `https://fpl-mcp-9tiv.onrender.com/mcp` (claude.ai, ChatGPT, Grok, Cursor; see [Connecting AI clients](#connecting-ai-clients))
+- npm: `npx -y fpl-mcp-server` for apps that run local servers (Claude Desktop, Cursor, VS Code)
+- [Smithery](https://smithery.ai/server/@gilbertchris062/fpl-mcp) and the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.GilbertKamau/fpl-mcp) (`io.github.GilbertKamau/fpl-mcp`)
+
+The hosted server runs on a free plan, so the first request after a quiet spell can take a minute.
 
 <p align="center"><img src="docs/demo.svg" alt="An AI assistant answering 'Best midfielders under £7m for the next 3 gameweeks?' and 'Who are the best captains for GW7?' with fpl-mcp's predictions" width="760"></p>
 
