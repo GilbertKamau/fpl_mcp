@@ -2,7 +2,7 @@
 name = "fpl-mcp"
 version = "0.1.0"
 description = "MCP server for Fantasy Premier League data, predictions and squad advice"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -15,7 +15,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "python-dotenv>=1.0",
     "lightgbm>=4.0",
-    "pulp>=3.0",
+    "pulp>=4.0",  # the optimizer uses the PuLP 4 API
     "highspy>=1.7",
 ]
 

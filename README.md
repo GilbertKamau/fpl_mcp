@@ -18,7 +18,7 @@ Example questions: *"Who are the best midfielders under £7m for the next 3 game
 
 ## Setup
 
-Requires Python 3.11+.
+Requires Python 3.12+.
 
 ```bash
 git clone https://github.com/GilbertKamau/fpl_mcp.git && cd fpl_mcp
