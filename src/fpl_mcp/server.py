@@ -100,7 +100,8 @@ def player_season_history(player: str) -> dict:
 
 @mcp.tool()
 def get_my_team(team_id: int, gameweek: int | None = None) -> dict:
-    """A manager's 15-man squad, captain, bank and rank for a gameweek (default: current).
+    """A manager's 15-man squad, captain, bank and rank for a gameweek (default: current),
+    plus availability_alerts for injured, suspended, loaned-out or doubtful players (bench included).
 
     team_id is the number in the FPL website URL: fantasy.premierleague.com/entry/<team_id>/event/<gw>.
     Picks for a gameweek only become public after its deadline.
@@ -150,7 +151,8 @@ def suggest_transfers(
     """Best transfers for a manager's team over the next N gameweeks, counting -4 hits.
 
     free_transfers: leave empty to estimate it from the team's history; set it if you know better.
-    Recommends rolling the transfer when no move is worth it.
+    Recommends rolling the transfer when no move is worth it. availability_alerts lists players who
+    are out or doubtful in the squad after the suggested transfers; mention them to the user.
     """
     return optimizer.suggest_transfers(
         team_id, free_transfers=free_transfers, max_transfers=max_transfers, gameweeks=gameweeks

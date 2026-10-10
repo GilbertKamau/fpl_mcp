@@ -69,3 +69,21 @@ def test_history_row_parses_vaastav_record():
     assert row["expected_goals"] == 0.01
     assert row["assists"] is None  # missing columns become NULL, not 0
     assert row["kickoff_time"].tzinfo is not None
+
+
+def test_availability_alerts_flag_out_and_doubtful_players(monkeypatch):
+    from fpl_mcp import queries
+
+    def player(pid, status, chance=None, news=None):
+        return {"id": pid, "web_name": f"P{pid}", "team_id": 1, "position": "DEF",
+                "status": status, "chance_of_playing_next_round": chance, "news": news}
+
+    squad = [player(1, "a"), player(2, "u", news="Loaned out"), player(3, "d", 75, "Knock"), player(4, "s", 0)]
+    snap = {"players_by_id": {p["id"]: p for p in squad}, "teams": {1: {"short_name": "AAA"}}}
+    monkeypatch.setattr(queries, "snapshot", lambda: snap)
+
+    alerts = queries.availability_alerts([1, 2, 3, 4], starters={1, 3, 4})
+    assert [a["player"] for a in alerts] == ["P4", "P2", "P3"]  # out starters, out bench, then doubtful
+    assert alerts[0]["role"] == "starting XI" and alerts[0]["severity"] == "out"
+    assert alerts[1]["role"] == "bench" and "No cover" in alerts[1]["impact"]
+    assert alerts[2]["severity"] == "doubtful" and "75%" in alerts[2]["impact"]

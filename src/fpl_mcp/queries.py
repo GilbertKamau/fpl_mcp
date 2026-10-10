@@ -459,6 +459,46 @@ def player_season_history(query: str | int) -> dict:
     return {"player": p["web_name"], "seasons": seasons}
 
 
+def availability_alerts(player_ids: list[int], starters: set[int] | None = None) -> list[dict]:
+    """Players in a squad who are out or doubtful, worst first.
+
+    Flagged regardless of where they sit: a dead bench spot means no cover when a starter misses.
+    """
+    by_id = snapshot()["players_by_id"]
+    tm = team_map()
+    alerts = []
+    for pid in player_ids:
+        p = by_id.get(pid)
+        if not p:
+            continue
+        chance = p["chance_of_playing_next_round"]
+        out = p["status"] in ("i", "s", "u", "n") or chance == 0
+        doubtful = not out and (p["status"] == "d" or (chance is not None and chance < 100))
+        if not (out or doubtful):
+            continue
+        role = None if starters is None else ("starting XI" if pid in starters else "bench")
+        if out and role == "bench":
+            impact = "No cover from this bench spot if a starter misses out."
+        elif out:
+            impact = "Will score 0 if left in the starting XI."
+        else:
+            impact = f"{chance if chance is not None else '?'}% chance of playing next gameweek."
+        alerts.append(
+            {
+                "player": p["web_name"],
+                "team": tm.get(p["team_id"], {}).get("short_name"),
+                "position": p["position"],
+                **({"role": role} if role else {}),
+                "severity": "out" if out else "doubtful",
+                "status": STATUS.get(p["status"], p["status"]),
+                "news": p["news"],
+                "impact": impact,
+            }
+        )
+    alerts.sort(key=lambda a: (a["severity"] != "out", a.get("role") == "bench"))
+    return alerts
+
+
 def my_team(team_id: int, gameweek: int | None = None) -> dict:
     """A manager's squad for a gameweek, using the public entry endpoints (no login)."""
     profile = api.entry(team_id)
@@ -506,6 +546,9 @@ def my_team(team_id: int, gameweek: int | None = None) -> dict:
         "transfers_made_this_gw": eh.get("event_transfers"),
         "transfer_cost_this_gw": eh.get("event_transfers_cost"),
         "active_chip": picks.get("active_chip"),
+        "availability_alerts": availability_alerts(
+            [x["element"] for x in picks["picks"]], starters={x["element"] for x in picks["picks"] if x["position"] <= 11}
+        ),
         "squad": squad,
     }
 

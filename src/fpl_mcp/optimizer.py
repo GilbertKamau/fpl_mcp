@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import pulp
 
 from . import api
-from .queries import NotFound, snapshot, team_map
+from .queries import NotFound, availability_alerts, snapshot, team_map
 
 SQUAD_SHAPE = {"GKP": 2, "DEF": 5, "MID": 5, "FWD": 3}
 XI_MIN = {"GKP": 1, "DEF": 3, "MID": 2, "FWD": 1}
@@ -309,8 +309,19 @@ def suggest_transfers(
         "expected_gain_over_holding": gain,
         "expected_points_by_gameweek": {g: plan.lineups[g]["points"] for g in gws},
         "next_gameweek_lineup": describe_lineup(plan, gws[0]),
+        # Checked on the squad after the suggested transfers, with roles from the suggested lineup.
+        "availability_alerts": (alerts := availability_alerts(plan.squad, set(plan.lineups[gws[0]]["xi"]))),
         "notes": m.notes
-        + ["Gain is weighted points over the planning window, after hits (later weeks count a bit less)."],
+        + ["Gain is weighted points over the planning window, after hits (later weeks count a bit less)."]
+        + (
+            [
+                "The plan keeps unavailable bench players because bench points count for little, so replacing "
+                "them costs a transfer for a small expected gain. Worth doing with a spare free transfer, or "
+                "fold it into a Wildcard."
+            ]
+            if any(a["severity"] == "out" and a.get("role") == "bench" for a in alerts)
+            else []
+        ),
     }
 
 
