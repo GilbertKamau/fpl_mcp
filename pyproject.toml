@@ -3,6 +3,11 @@ name = "fpl-mcp"
 version = "0.1.0"
 description = "MCP server for Fantasy Premier League data, predictions and squad advice"
 requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Gilbert Kamau" }]
+keywords = ["fpl", "fantasy-premier-league", "mcp", "model-context-protocol", "football"]
 dependencies = [
     "mcp[cli]>=2.0",
     "httpx>=0.27",
@@ -14,6 +19,9 @@ dependencies = [
     "highspy>=1.7",
 ]
 
+[project.urls]
+Repository = "https://github.com/GilbertKamau/fpl_mcp"
+
 [project.optional-dependencies]
 supabase = ["psycopg[binary]>=3.1"]
 dev = ["pytest>=8"]
@@ -24,7 +32,7 @@ fpl-sync = "fpl_mcp.ingest:main"
 fpl-model = "fpl_mcp.model:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

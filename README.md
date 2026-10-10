@@ -1,17 +1,27 @@
 # fpl-mcp
 
-An MCP server for Fantasy Premier League. It pulls live data from the official FPL API and
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+An open-source [MCP](https://modelcontextprotocol.io) server for Fantasy Premier League that works
+with Claude, ChatGPT, Grok, Cursor, VS Code and any other MCP client. It pulls live data from the official FPL API and
 past seasons (2016-17 onward) from the [vaastav dataset](https://github.com/vaastav/Fantasy-Premier-League),
 predicts every player's points for the next five gameweeks, and recommends squads, transfers,
 captains and chips. Data lives in SQLite or Supabase.
 
+Example questions: *"Who are the best midfielders under £7m for the next 3 gameweeks?"*,
+*"Suggest transfers for team 1234567"*, *"Should I play my Bench Boost this week?"*
+
 ## Setup
 
-```powershell
+Requires Python 3.11+.
+
+```bash
+git clone https://github.com/GilbertKamau/fpl_mcp.git && cd fpl_mcp
 python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[supabase,dev]"
-.venv\Scripts\fpl-sync all        # load data (~15 min to Supabase the first time, ~3 min to SQLite)
-.venv\Scripts\fpl-model all       # train the model and write predictions (~3-6 min the first time)
+# Windows: .venv\Scripts\activate     macOS/Linux: source .venv/bin/activate
+pip install -e ".[supabase,dev]"
+fpl-sync all       # load data (~3 min to SQLite; ~15 min to a remote Supabase the first time)
+fpl-model all      # train the model and write predictions (~3-6 min the first time)
 ```
 
 `fpl-sync` jobs:
@@ -102,23 +112,153 @@ the last deadline aren't public yet, so they aren't included.
 | `chip_advice` | Which chips are left this half, what each is worth, play or save |
 | `refresh_data` | Re-pull the live snapshot |
 
-### Connecting
+## Connecting AI clients
 
-- **Claude Code**: `.mcp.json` in this folder registers the server; approve it when Claude Code
-  starts here.
-- **Claude Desktop / Cursor / VS Code**: add a server with command
-  `C:\Users\user\Desktop\fpl_mcp\.venv\Scripts\python.exe` and args `["-m", "fpl_mcp.server"]`.
+There are two ways to run the server:
+
+- **Local (stdio):** your AI app starts the server on your computer. Works with Claude Code,
+  Claude Desktop, Cursor and VS Code. Nothing is exposed to the internet.
+- **Remote (HTTP):** you host the server at a public HTTPS URL (see [Deploying](#deploying)).
+  Required for claude.ai, ChatGPT and Grok, which can't start programs on your computer.
+
+In the examples, `/path/to/fpl_mcp/.venv/bin/python` is the Python inside your virtual
+environment (Windows: `C:\path\to\fpl_mcp\.venv\Scripts\python.exe`), and
+`https://your-server.example.com/mcp` is your deployed URL.
+
+### Claude Code
+
+```bash
+claude mcp add fpl -- /path/to/fpl_mcp/.venv/bin/python -m fpl_mcp.server        # local
+claude mcp add --transport http fpl https://your-server.example.com/mcp          # remote
+```
+
+### Claude Desktop
+
+Local: Settings > Developer > Edit Config, then add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "fpl": { "command": "/path/to/fpl_mcp/.venv/bin/python", "args": ["-m", "fpl_mcp.server"] }
+  }
+}
+```
+
+Remote: use Settings > Connectors > Add custom connector (same as claude.ai below).
+
+### claude.ai
+
+Settings > Connectors > Add custom connector, and paste `https://your-server.example.com/mcp`.
+Available on paid plans; on Team/Enterprise an owner adds it for the organization. claude.ai
+connects to servers without a login or with OAuth, so leave `MCP_AUTH_TOKEN` unset.
+
+### ChatGPT
+
+Turn on Developer mode (Settings > Apps & Connectors > Advanced), create a connector with the URL
+`https://your-server.example.com/mcp` and authentication **None**, then pick it from the tools
+menu in a chat. Plan availability varies, so check OpenAI's current docs. Like claude.ai, it can't
+send a fixed token, so leave `MCP_AUTH_TOKEN` unset.
+
+### Grok (xAI API)
+
+Grok connects to remote MCP servers through the xAI API:
+
+```python
+from xai_sdk import Client
+from xai_sdk.chat import user
+from xai_sdk.tools import mcp
+
+client = Client()  # reads XAI_API_KEY
+chat = client.chat.create(
+    model="grok-4.7",
+    tools=[mcp(server_url="https://your-server.example.com/mcp", server_label="fpl")],
+)
+chat.append(user("Who should I captain in gameweek 7?"))
+print(chat.sample().content)
+```
+
+Or with the Responses API, add this to `tools`:
+
+```json
+{ "type": "mcp", "server_url": "https://your-server.example.com/mcp", "server_label": "fpl" }
+```
+
+If you set `MCP_AUTH_TOKEN`, also pass `"authorization": "<token>"`.
+
+### Cursor
+
+Add to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project):
+
+```json
+{
+  "mcpServers": {
+    "fpl": { "command": "/path/to/fpl_mcp/.venv/bin/python", "args": ["-m", "fpl_mcp.server"] }
+  }
+}
+```
+
+Remote: `"fpl": { "url": "https://your-server.example.com/mcp" }`, plus
+`"headers": { "Authorization": "Bearer <token>" }` if you set a token.
+
+### VS Code (GitHub Copilot agent mode)
+
+`.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "fpl": { "type": "stdio", "command": "/path/to/fpl_mcp/.venv/bin/python", "args": ["-m", "fpl_mcp.server"] }
+  }
+}
+```
+
+Remote: `"fpl": { "type": "http", "url": "https://your-server.example.com/mcp" }`.
+
+### Anything else
+
+Any MCP client that supports stdio or Streamable HTTP works. To try the server interactively:
+`npx @modelcontextprotocol/inspector /path/to/fpl_mcp/.venv/bin/python -m fpl_mcp.server`.
+
+## Deploying
+
+The hosted server only **reads** the database. Data, training and predictions run on your own
+machine (or any scheduled job) with `fpl-sync weekly`, and the hosted server picks up new
+predictions within 10 minutes. You therefore need a database both can reach, such as Supabase.
+
+1. **Create a read-only database user** for the public server: run
+   [`scripts/supabase_readonly_role.sql`](scripts/supabase_readonly_role.sql) in Supabase's SQL editor.
+2. **Deploy.** On [Render](https://render.com): New > Blueprint, pick your fork of this repo, and
+   [`render.yaml`](render.yaml) sets it up. Elsewhere (Fly.io, Railway, Google Cloud Run, a VPS),
+   use the [`Dockerfile`](Dockerfile).
+3. **Set environment variables:**
+
+   | Variable | Required | Purpose |
+   |---|---|---|
+   | `DATABASE_URL` | yes | Supabase Session pooler URI for the read-only user |
+   | `MCP_AUTH_TOKEN` | no | If set, every request needs `Authorization: Bearer <token>`. Grok, Cursor and VS Code can send it; claude.ai and ChatGPT can't |
+   | `FPL_MCP_ALLOW_REFRESH` | no | `1` exposes the `refresh_data` tool (off by default when hosted) |
+   | `PORT` | no | Set by most hosts automatically; defaults to 8000 |
+
+4. Your MCP URL is `https://<your-app>/mcp`. `https://<your-app>/health` should return `{"status":"ok"}`.
+
+To run the HTTP server locally: `fpl-mcp --http` (serves `http://127.0.0.1:8000/mcp`).
+
+Without a token, anyone with the URL can call the tools. The data is public FPL data and the
+server is read-only, but if the URL gets shared widely, set a token or put it behind your host's
+access controls.
 
 ## Scheduled updates
 
-`scripts\update.ps1` runs the updates and logs to `data\logs`. Two Windows scheduled tasks call it:
+On Windows, `scripts\update.ps1` runs the updates and logs to `data\logs`. Two scheduled tasks
+call it (create them with `schtasks`, or in Task Scheduler):
 
 | Task | When | Mode |
 |---|---|---|
 | FPL MCP weekly update | Tuesday 08:00 | `weekly`: refresh data, retrain, predict |
 | FPL MCP news refresh | Friday 08:00 | `news`: refresh prices/injuries, predict |
 
-They run only while you're logged in. Manage them in Task Scheduler, or remove them with
+They run only while you're logged in. On macOS/Linux, use cron instead:
+`0 8 * * 2 cd /path/to/fpl_mcp && .venv/bin/fpl-sync weekly`. Manage them in Task Scheduler, or remove them with
 `schtasks /Delete /TN "FPL MCP weekly update"` (and the same for "FPL MCP news refresh").
 
 ## Tests
@@ -134,5 +274,17 @@ They run only while you're logged in. Manage them in Task Scheduler, or remove t
 3. ~~Points prediction: LightGBM with walk-forward validation against a rolling-average baseline~~
 4. ~~Optimizer: best squad, transfers, captain, chip advice~~
 5. ~~Scheduled updates (sync → retrain → predict)~~
-6. HTTP hosting for ChatGPT and other remote clients
+6. ~~HTTP hosting for claude.ai, ChatGPT, Grok and other remote clients~~
 7. Optional: apply changes to your FPL team (preview-only by default)
+
+## Contributing
+
+Issues and pull requests are welcome. Please run `pytest` before opening a PR, and never commit
+`.env`, `data/` or `models/`.
+
+## Credits and disclaimer
+
+Historical data comes from [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League);
+live data from the public FPL API. This project is not affiliated with or endorsed by the Premier
+League or Fantasy Premier League. Use the FPL API responsibly, and treat predictions as estimates,
+not guarantees.

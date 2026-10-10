@@ -1,6 +1,15 @@
-"""FPL MCP server (stdio). Run with `fpl-mcp` or `python -m fpl_mcp.server`."""
+"""FPL MCP server.
+
+    fpl-mcp                         stdio, for local clients (Claude Code, Claude Desktop, Cursor, VS Code)
+    fpl-mcp --http --host 0.0.0.0   Streamable HTTP at /mcp, for remote clients (claude.ai, ChatGPT, Grok)
+"""
+
+import argparse
+import hmac
+import os
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from . import ingest, optimizer, queries
 
@@ -166,8 +175,58 @@ def refresh_data() -> dict:
     return result
 
 
+def http_app(token: str | None = None, allow_refresh: bool = False):
+    """ASGI app for remote clients (claude.ai, ChatGPT, Grok, Cursor...) at /mcp.
+
+    Read-only unless allow_refresh: data updates belong to the scheduled jobs, not to the public.
+    With a token, every request except /health needs `Authorization: Bearer <token>`.
+    """
+    if not allow_refresh:
+        try:
+            mcp.remove_tool("refresh_data")
+        except ToolError:
+            pass  # already removed
+    # Stateless: no per-client sessions to lose when a free-tier host sleeps or restarts.
+    app = mcp.streamable_http_app(stateless_http=True, json_response=True, host="0.0.0.0")
+    expected = f"Bearer {token}".encode() if token else None
+
+    async def guarded(scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/health":
+            await _respond(send, 200, b'{"status":"ok"}')
+            return
+        if expected and scope["type"] == "http":
+            supplied = dict(scope["headers"]).get(b"authorization", b"")
+            if not hmac.compare_digest(supplied, expected):
+                await _respond(send, 401, b'{"error":"missing or invalid bearer token"}')
+                return
+        await app(scope, receive, send)
+
+    return guarded
+
+
+async def _respond(send, status: int, body: bytes) -> None:
+    await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"application/json")]})
+    await send({"type": "http.response.body", "body": body})
+
+
 def main() -> None:
-    mcp.run()
+    parser = argparse.ArgumentParser(description="FPL MCP server")
+    parser.add_argument("--http", action="store_true", help="serve over HTTP (Streamable HTTP at /mcp) instead of stdio")
+    parser.add_argument("--host", default=os.getenv("HOST", "127.0.0.1"), help="use 0.0.0.0 when hosting")
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
+    args = parser.parse_args()
+
+    if not args.http:
+        mcp.run()
+        return
+
+    import uvicorn
+
+    app = http_app(
+        token=os.getenv("MCP_AUTH_TOKEN") or None,
+        allow_refresh=os.getenv("FPL_MCP_ALLOW_REFRESH", "").lower() in ("1", "true", "yes"),
+    )
+    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=True, forwarded_allow_ips="*")
 
 
 if __name__ == "__main__":

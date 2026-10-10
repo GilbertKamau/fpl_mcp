@@ -1,5 +1,6 @@
 """Database schema and helpers. Works on SQLite and Postgres (Supabase)."""
 
+import logging
 from collections.abc import Iterable, Sequence
 from functools import lru_cache
 
@@ -16,6 +17,7 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import ProgrammingError
 
 from .config import database_url
 
@@ -217,7 +219,11 @@ def get_engine() -> Engine:
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
     engine = create_engine(url, **kwargs)
-    metadata.create_all(engine)
+    try:
+        metadata.create_all(engine)
+    except ProgrammingError as exc:
+        # A read-only user (the hosted server's) can't create tables; that's fine once they exist.
+        logging.getLogger("fpl_mcp.db").warning("Could not create tables (%s); assuming they exist.", exc.orig)
     return engine
 
 

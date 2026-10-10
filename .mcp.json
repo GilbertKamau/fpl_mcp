@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "fpl": {
-      "command": "C:\\Users\\user\\Desktop\\fpl_mcp\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "fpl_mcp.server"]
-    }
-  }
-}
