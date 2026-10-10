@@ -8,6 +8,10 @@ past seasons (2016-17 onward) from the [vaastav dataset](https://github.com/vaas
 predicts every player's points for the next five gameweeks, and recommends squads, transfers,
 captains and chips. Data lives in SQLite or Supabase.
 
+**Try it without installing anything:** add `https://fpl-mcp-9tiv.onrender.com/mcp` as a remote MCP
+server in your AI app (see [Connecting AI clients](#connecting-ai-clients)). It runs on a free plan,
+so the first request after a quiet spell can take about a minute while it wakes up.
+
 Example questions: *"Who are the best midfielders under £7m for the next 3 gameweeks?"*,
 *"Suggest transfers for team 1234567"*, *"Should I play my Bench Boost this week?"*
 

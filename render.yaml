@@ -3,6 +3,7 @@ services:
   - type: web
     name: fpl-mcp
     runtime: docker
+    region: frankfurt  # near the Supabase database (eu-west-1)
     plan: free  # sleeps after ~15 min idle; the first request after that takes ~1 min
     healthCheckPath: /health
     envVars:
